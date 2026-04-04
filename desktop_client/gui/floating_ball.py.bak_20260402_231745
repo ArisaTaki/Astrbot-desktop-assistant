@@ -21,7 +21,6 @@ from PySide6.QtCore import (
     Qt,
     QPoint,
     QTimer,
-    QEventLoop,
     Signal,
     QPropertyAnimation,
     QEasingCurve,
@@ -72,9 +71,6 @@ from ..services import get_chat_history_manager, ChatMessage
 # 使用 PyObjC 设置 NSWindow.level 实现真正的置顶效果
 _HAS_PYOBJC = False
 _NSFloatingWindowLevel = 3  # NSFloatingWindowLevel 常量值
-_NSNormalWindowLevel = 0
-_CAPTURE_SETTLE_MS = 180 if sys.platform == "darwin" else 50
-_CAPTURE_RESTORE_SETTLE_MS = 80 if sys.platform == "darwin" else 0
 
 if sys.platform == "darwin":
     try:
@@ -148,25 +144,6 @@ def _set_macos_window_level(widget: QWidget, level: Optional[int] = None):
         print(f"[macOS] 设置窗口层级失败: {e}")
 
 
-def _wait_for_window_server(milliseconds: int) -> None:
-    """
-    给窗口系统一个很短的生效时间，同时保持 Qt 事件循环继续处理。
-
-    这里不用 time.sleep()，否则 hide/show 和 window level 变更可能还没被
-    WindowServer 处理，就已经开始截图了。
-    """
-    if milliseconds <= 0:
-        return
-
-    app = QApplication.instance()
-    if app is None:
-        return
-
-    loop = QEventLoop()
-    QTimer.singleShot(milliseconds, loop.quit)
-    loop.exec()
-
-
 class FloatingBallState(Enum):
     """悬浮球状态"""
 
@@ -189,7 +166,7 @@ class CompactChatWindow(QWidget):
     def __init__(self, parent=None, max_history: int = 50, config=None):
         super().__init__(parent)
         self._config = config
-        self._always_on_top = False
+        self._always_on_top = True
         self._base_window_flags = (
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Window
@@ -430,41 +407,6 @@ class CompactChatWindow(QWidget):
         # 历史记录将由 FloatingBallWindow 在头像设置完成后统一加载
         # 移除这里的延迟加载，避免与 FloatingBallWindow 中的 reload_history_display 产生竞态条件
         # 见 FloatingBallWindow.__init__ 中的 QTimer.singleShot(150, self._compact_window.reload_history_display)
-
-
-    def _prepare_visual_capture(self):
-        """截图/桌面识别前的统一处理：
-        1. 记录当前显示状态
-        2. 隐藏聊天窗和悬浮球
-        3. 避免置顶窗口污染截图/识别结果
-        """
-        if self._capture_prepared:
-            return
-
-        self._chat_window_was_visible = self._compact_window.isVisible()
-        self._ball_was_visible = self.isVisible()
-
-        if self._chat_window_was_visible:
-            self._compact_window.hide()
-
-        if self._ball_was_visible:
-            self.hide()
-
-        self._capture_prepared = True
-
-    def _restore_after_visual_capture(self):
-        """截图/桌面识别后恢复显示状态"""
-        if not self._capture_prepared:
-            return
-
-        if self._ball_was_visible:
-            self.show()
-
-        if self._chat_window_was_visible:
-            self._compact_window.show()
-            self._update_compact_window_position()
-
-        self._capture_prepared = False
 
     def _on_theme_changed(self, theme: Theme):
         """主题切换时只更新样式，不重新加载历史"""
@@ -2003,12 +1945,6 @@ class FloatingBallWindow(QWidget):
             elif isinstance(appearance, dict) and "avatar_path" in appearance:
                 self._load_avatar(appearance["avatar_path"])
 
-        # 感知类操作（截图/桌面识别）时的临时隐藏/恢复状态
-        self._capture_prepared = False
-        self._capture_prepare_depth = 0
-        self._chat_window_was_visible = False
-        self._ball_was_visible = False
-
         # 精简版对话窗口
         self._compact_window = CompactChatWindow(config=self.config)
         self._compact_window.message_sent.connect(self.message_sent)
@@ -2597,11 +2533,13 @@ class FloatingBallWindow(QWidget):
     def _on_region_screenshot(self):
         """区域截图"""
         try:
-            self._prepare_for_capture()
-            QTimer.singleShot(0, self._start_region_capture)
+            # 记录聊天窗口是否可见，截图后恢复
+            self._chat_window_was_visible = self._compact_window.isVisible()
+            self._compact_window.hide()
+            self.hide()
+            QTimer.singleShot(100, self._start_region_capture)
         except ImportError as e:
             print(f"区域截图功能不可用: {e}")
-            self._restore_after_capture()
 
     def _start_region_capture(self):
         """开始区域截图"""
@@ -2612,33 +2550,47 @@ class FloatingBallWindow(QWidget):
             self._capture.capture_async(self._on_screenshot_complete)
         except Exception as e:
             print(f"启动区域截图失败: {e}")
-            self._restore_after_capture()
+            self.show()
+            # 恢复聊天窗口显示状态
+            if getattr(self, '_chat_window_was_visible', False):
+                self._compact_window.show()
 
     def _on_full_screenshot(self):
         """全屏截图"""
         try:
-            self._prepare_for_capture()
-            QTimer.singleShot(0, self._do_full_screenshot)
+            # 记录聊天窗口是否可见，截图后恢复
+            self._chat_window_was_visible = self._compact_window.isVisible()
+            self._compact_window.hide()
+            self.hide()
+            QTimer.singleShot(100, self._do_full_screenshot)
         except ImportError as e:
             print(f"截图功能不可用: {e}")
-            self._restore_after_capture()
 
     def _do_full_screenshot(self):
         """执行全屏截图"""
         try:
             service = ScreenCaptureService()
             screenshot_path = service.capture_full_screen_to_file()
-            self._restore_after_capture()
+
+            self.show()
+            # 恢复聊天窗口显示状态
+            if getattr(self, '_chat_window_was_visible', False):
+                self._compact_window.show()
 
             if screenshot_path:
                 self.screenshot_requested.emit(screenshot_path)
         except Exception as e:
             print(f"全屏截图失败: {e}")
-            self._restore_after_capture()
+            self.show()
+            if getattr(self, '_chat_window_was_visible', False):
+                self._compact_window.show()
 
     def _on_screenshot_complete(self, screenshot_path):
         """截图完成回调"""
-        self._restore_after_capture()
+        self.show()
+        # 恢复聊天窗口显示状态
+        if getattr(self, '_chat_window_was_visible', False):
+            self._compact_window.show()
 
         if screenshot_path:
             self.screenshot_requested.emit(screenshot_path)
@@ -2665,95 +2617,6 @@ class FloatingBallWindow(QWidget):
         self._update_compact_window_position()
         self._compact_window.show()
         self._compact_window.activateWindow()
-
-    def _prepare_for_capture(self):
-        """截图/桌面识别前的统一处理"""
-        self._capture_prepare_depth += 1
-        if self._capture_prepared:
-            return
-
-        self._capture_prepared = True
-        self._capture_restore_ball_visible = self.isVisible()
-        self._capture_restore_chat_visible = self._compact_window.isVisible()
-        self._capture_restore_ball_pos = self.pos()
-        self._capture_restore_chat_pos = self._compact_window.pos()
-        self._capture_restore_ball_opacity = self.windowOpacity()
-        self._capture_restore_chat_opacity = self._compact_window.windowOpacity()
-
-        # macOS 上仅 hide() 还不够。先把原生窗口层级降回普通层，再隐藏，
-        # 可以显著降低 WindowServer 仍把置顶窗合进截图的概率。
-        if sys.platform == "darwin":
-            _set_macos_window_level(self._compact_window, _NSNormalWindowLevel)
-            _set_macos_window_level(self, _NSNormalWindowLevel)
-            self._compact_window.lower()
-            self.lower()
-
-        self._compact_window.setWindowOpacity(0)
-        self.setWindowOpacity(0)
-
-        if self._capture_restore_chat_visible:
-            self._compact_window.hide()
-        if self._capture_restore_ball_visible:
-            self.hide()
-
-        QApplication.processEvents()
-        _wait_for_window_server(_CAPTURE_SETTLE_MS)
-
-    def _restore_after_capture(self):
-        """截图/桌面识别后恢复显示状态"""
-        try:
-            if self._capture_prepare_depth <= 0:
-                return
-
-            self._capture_prepare_depth -= 1
-            if self._capture_prepare_depth > 0:
-                return
-            if not self._capture_prepared:
-                return
-
-            if getattr(self, "_capture_restore_ball_visible", False):
-                self.move(getattr(self, "_capture_restore_ball_pos", self.pos()))
-                self.setWindowOpacity(
-                    getattr(self, "_capture_restore_ball_opacity", 1.0)
-                )
-                self.show()
-                self.raise_()
-            else:
-                self.setWindowOpacity(
-                    getattr(self, "_capture_restore_ball_opacity", 1.0)
-                )
-
-            if getattr(self, "_capture_restore_chat_visible", False):
-                self._compact_window.move(
-                    getattr(self, "_capture_restore_chat_pos", self._compact_window.pos())
-                )
-                self._compact_window.setWindowOpacity(
-                    getattr(self, "_capture_restore_chat_opacity", 1.0)
-                )
-                self._compact_window.show()
-                self._compact_window.raise_()
-            else:
-                self._compact_window.setWindowOpacity(
-                    getattr(self, "_capture_restore_chat_opacity", 1.0)
-                )
-
-            QApplication.processEvents()
-
-            # show() 后重新应用 macOS 顶层 level，恢复截图前的展示行为。
-            if sys.platform == "darwin":
-                if getattr(self, "_capture_restore_ball_visible", False):
-                    QTimer.singleShot(0, lambda: _set_macos_window_level(self))
-                if getattr(self, "_capture_restore_chat_visible", False):
-                    QTimer.singleShot(
-                        0, lambda: _set_macos_window_level(self._compact_window)
-                    )
-                _wait_for_window_server(_CAPTURE_RESTORE_SETTLE_MS)
-
-            self._capture_prepared = False
-        except Exception as e:
-            print(f"[capture-restore] restore failed: {e}")
-            self._capture_prepared = False
-            self._capture_prepare_depth = 0
 
     def _update_compact_window_position(self):
         """更新精简窗口位置"""

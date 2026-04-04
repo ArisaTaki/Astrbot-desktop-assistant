@@ -88,9 +88,14 @@ class DesktopMonitorService:
         self._monitor_task: Optional[asyncio.Task] = None
         self._last_window_title: Optional[str] = None
         self._last_state: Optional[DesktopState] = None
+        self._floating_ball: Optional[Any] = None
 
         # 获取平台适配器
         self._platform: IPlatformAdapter = get_platform_adapter()
+
+    def set_floating_ball(self, floating_ball: Any) -> None:
+        """注入悬浮球实例，统一处理截图前后的窗口隐藏/恢复。"""
+        self._floating_ball = floating_ball
 
     @property
     def is_monitoring(self) -> bool:
@@ -204,6 +209,9 @@ class DesktopMonitorService:
             return None
 
         try:
+            if self._floating_ball and hasattr(self._floating_ball, "_prepare_for_capture"):
+                self._floating_ball._prepare_for_capture()
+
             # 使用 screen_capture 服务捕获全屏
             image = self.screen_capture.capture_full_screen()
             if image is None:
@@ -228,6 +236,9 @@ class DesktopMonitorService:
         except Exception as e:
             print(f"截图失败: {e}")
             return None
+        finally:
+            if self._floating_ball and hasattr(self._floating_ball, "_restore_after_capture"):
+                self._floating_ball._restore_after_capture()
 
     def _resize_image(
         self, image: "Image.Image", max_width: int, max_height: int

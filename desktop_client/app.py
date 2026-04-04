@@ -84,6 +84,9 @@ class DesktopClientApp(QObject):
         # 主动对话服务
         self._proactive_service = None
 
+        # 桌面监控服务（如果外部接入，统一在这里补齐悬浮球注入）
+        self._desktop_monitor_service = None
+
         # 更新服务
         self._update_service = None
 
@@ -144,6 +147,20 @@ class DesktopClientApp(QObject):
         self._settings_controller.reconnect_requested.connect(
             lambda: asyncio.ensure_future(self._reconnect_server())
         )
+
+    def set_desktop_monitor_service(self, desktop_monitor_service) -> None:
+        """
+        注册桌面监控服务，并在悬浮球可用时补齐截图前后处理注入。
+
+        app 当前不直接创建 DesktopMonitorService，这个入口用于保持注入点单一。
+        """
+        self._desktop_monitor_service = desktop_monitor_service
+        if (
+            self._desktop_monitor_service
+            and self._floating_ball
+            and hasattr(self._desktop_monitor_service, "set_floating_ball")
+        ):
+            self._desktop_monitor_service.set_floating_ball(self._floating_ball)
 
     def _is_autostart_launch(self) -> bool:
         """检测是否为开机自启启动
@@ -490,6 +507,10 @@ class DesktopClientApp(QObject):
         self._proactive_handler.set_floating_ball(self._floating_ball)
         self._settings_controller.set_floating_ball(self._floating_ball)
         self._remote_command_handler.set_floating_ball(self._floating_ball)
+        if self._desktop_monitor_service and hasattr(
+            self._desktop_monitor_service, "set_floating_ball"
+        ):
+            self._desktop_monitor_service.set_floating_ball(self._floating_ball)
 
         # 创建系统托盘
         logger.debug("创建系统托盘...")

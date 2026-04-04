@@ -4,7 +4,6 @@
 处理服务端通过 WebSocket 下发的命令，如截图等。
 """
 
-import asyncio
 import base64
 import logging
 import time
@@ -150,12 +149,9 @@ class RemoteCommandHandler(QObject):
             # 导入截图服务
             from ..services.screen_capture import ScreenCaptureService
 
-            # 隐藏悬浮球窗口（避免截到自己）
-            if self._floating_ball:
-                self._floating_ball.hide()
-
-            # 等待窗口隐藏
-            await asyncio.sleep(0.15)
+            # 统一通过悬浮球封装处理截图前的隐藏和 macOS 层级降级。
+            if self._floating_ball and hasattr(self._floating_ball, "_prepare_for_capture"):
+                self._floating_ball._prepare_for_capture()
 
             # 执行截图
             save_dir = self._config.storage.image_save_path or "./temp/screenshots"
@@ -166,10 +162,6 @@ class RemoteCommandHandler(QObject):
             else:
                 # 区域截图暂不支持远程触发（需要用户交互）
                 image = service.capture_full_screen()
-
-            # 恢复窗口
-            if self._floating_ball:
-                self._floating_ball.show()
 
             if image is None:
                 return {"success": False, "error_message": "截图失败：无法捕获屏幕"}
@@ -205,8 +197,8 @@ class RemoteCommandHandler(QObject):
             return {"success": False, "error_message": error_msg}
         finally:
             # 确保窗口恢复
-            if self._floating_ball:
-                self._floating_ball.show()
+            if self._floating_ball and hasattr(self._floating_ball, "_restore_after_capture"):
+                self._floating_ball._restore_after_capture()
 
             # 退出忙碌状态
             await self._set_busy_state(False, "screenshot")
