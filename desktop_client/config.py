@@ -135,6 +135,10 @@ class AppearanceConfig:
     background_image_path: str = ""  # 聊天窗口背景图路径
     background_opacity: float = 0.3  # 背景图透明度 (0.0-1.0)
     background_blur: int = 0  # 背景模糊程度 (0-20)
+    # Live2D 配置
+    display_mode: str = "ball"  # "ball" 或 "live2d"
+    live2d_model_path: str = ""  # Live2D model3.json 路径
+    live2d_scale: float = 1.0  # Live2D 模型缩放
     # 自定义主题颜色
     custom_theme: CustomThemeConfig = field(default_factory=CustomThemeConfig)
 

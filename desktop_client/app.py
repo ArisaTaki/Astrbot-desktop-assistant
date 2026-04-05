@@ -482,11 +482,32 @@ class DesktopClientApp(QObject):
             except Exception as e:
                 logger.warning(f"应用自定义颜色配置失败，使用默认主题: {e}")
 
-        # 创建悬浮球
-        logger.debug("创建悬浮球...")
-        from .gui.floating_ball import FloatingBallWindow
+        # 创建悬浮球 / Live2D 角色窗口
+        display_mode = "ball"
+        live2d_model_path = ""
+        if hasattr(self.config, "appearance"):
+            display_mode = getattr(self.config.appearance, "display_mode", "ball") or "ball"
+            live2d_model_path = getattr(self.config.appearance, "live2d_model_path", "") or ""
 
-        self._floating_ball = FloatingBallWindow(config=self.config)
+        if display_mode == "live2d" and live2d_model_path:
+            logger.debug(f"创建 Live2D 角色窗口, 模型: {live2d_model_path}")
+            try:
+                import live2d.v3 as _live2d_mod  # type: ignore[import-untyped]
+                _live2d_mod.init()
+                self._live2d_initialized = True
+                from .gui.live2d_widget import Live2DCharacterWindow
+                self._floating_ball = Live2DCharacterWindow(
+                    model_path=live2d_model_path, config=self.config
+                )
+                logger.debug("Live2D 角色窗口创建成功")
+            except Exception as e:
+                logger.warning(f"Live2D 初始化失败，回退到悬浮球: {e}")
+                from .gui.floating_ball import FloatingBallWindow
+                self._floating_ball = FloatingBallWindow(config=self.config)
+        else:
+            logger.debug("创建悬浮球...")
+            from .gui.floating_ball import FloatingBallWindow
+            self._floating_ball = FloatingBallWindow(config=self.config)
         self._floating_ball.clicked.connect(self._on_ball_clicked)
         self._floating_ball.double_clicked.connect(self._on_ball_double_clicked)
         self._floating_ball.settings_requested.connect(self._show_settings)
@@ -810,6 +831,15 @@ class DesktopClientApp(QObject):
 
         if self._hotkey_manager:
             self._hotkey_manager.cleanup()
+
+        # 清理 Live2D 资源
+        if getattr(self, "_live2d_initialized", False):
+            try:
+                import live2d.v3 as _live2d_mod  # type: ignore[import-untyped]
+                _live2d_mod.dispose()
+                logger.debug("Live2D 资源已释放")
+            except Exception as e:
+                logger.warning(f"Live2D dispose 失败: {e}")
 
         asyncio.ensure_future(self._bridge.disconnect_server())
 
