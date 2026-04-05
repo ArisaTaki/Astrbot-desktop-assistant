@@ -1792,6 +1792,12 @@ class SettingsWindow(QWidget):
             QLineEdit:hover, QComboBox:hover, QSpinBox:hover, QDoubleSpinBox:hover {{
                 border-color: {c.border_base};
             }}
+            QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled,
+            QKeySequenceEdit:disabled, QTimeEdit:disabled {{
+                background-color: {c.bg_tertiary};
+                color: {c.text_secondary};
+                border-color: {c.border_light};
+            }}
 
             /* 下拉框 */
             QComboBox::drop-down {{
@@ -1854,6 +1860,17 @@ class SettingsWindow(QWidget):
                 background-color: {c.primary};
                 border-color: {c.primary};
             }}
+            QCheckBox:disabled {{
+                color: {c.text_secondary};
+            }}
+            QCheckBox::indicator:disabled {{
+                background-color: {c.bg_tertiary};
+                border-color: {c.border_light};
+            }}
+            QCheckBox::indicator:checked:disabled {{
+                background-color: {c.border_base};
+                border-color: {c.border_base};
+            }}
 
             /* === 头像预览 === */
             QLabel#avatarPreview {{
@@ -1877,6 +1894,11 @@ class SettingsWindow(QWidget):
             }}
             QPushButton:pressed {{
                 background-color: {c.bg_tertiary};
+            }}
+            QPushButton:disabled {{
+                background-color: {c.bg_tertiary};
+                color: {c.text_secondary};
+                border-color: {c.border_light};
             }}
 
             /* 清除颜色按钮 */
