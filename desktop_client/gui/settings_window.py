@@ -24,13 +24,15 @@ from PySide6.QtWidgets import (
     QComboBox,
     QCheckBox,
     QFileDialog,
-    QTabWidget,
+    QStackedWidget,
     QKeySequenceEdit,
     QSpinBox,
     QDoubleSpinBox,
     QMessageBox,
     QTimeEdit,
     QColorDialog,
+    QListWidget,
+    QListWidgetItem,
 )
 from PySide6.QtCore import Qt, Signal, QTime, QSize
 from qasync import asyncSlot
@@ -135,27 +137,27 @@ class ColorPickerButton(QPushButton):
 
 
 class SettingsSection(QFrame):
-    """设置分区组件"""
+    """设置分区组件 — 卡片风格"""
 
     def __init__(self, title: str, parent=None):
         super().__init__(parent)
         self.setObjectName("settingsSection")
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(0, 0, 0, 20)
+        layout.setSpacing(0)
 
         # 标题
         self._title = QLabel(title)
         self._title.setObjectName("sectionTitle")
         layout.addWidget(self._title)
 
-        # 内容区域
+        # 内容区域（卡片）
         self._content = QFrame()
         self._content.setObjectName("sectionContent")
         self._content_layout = QVBoxLayout(self._content)
-        self._content_layout.setContentsMargins(16, 12, 16, 12)
-        self._content_layout.setSpacing(12)
+        self._content_layout.setContentsMargins(20, 16, 20, 16)
+        self._content_layout.setSpacing(14)
         layout.addWidget(self._content)
 
     def add_row(self, label: str, widget: QWidget, orientation: str = "horizontal"):
@@ -201,8 +203,8 @@ class SettingsWindow(QWidget):
         self.config = config if config is not None else ClientConfig()
 
         self.setWindowTitle("设置")
-        self.setMinimumSize(500, 600)
-        self.resize(550, 700)
+        self.setMinimumSize(720, 560)
+        self.resize(780, 640)
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowCloseButtonHint)
 
         self._init_ui()
@@ -212,7 +214,7 @@ class SettingsWindow(QWidget):
         theme_manager.register_callback(self._on_theme_changed)
 
     def _init_ui(self):
-        """初始化 UI"""
+        """初始化 UI — 侧边栏导航 + 内容区"""
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
@@ -221,36 +223,62 @@ class SettingsWindow(QWidget):
         title_bar = self._create_title_bar()
         main_layout.addWidget(title_bar)
 
-        # 标签页
-        self._tabs = QTabWidget()
-        self._tabs.setObjectName("settingsTabs")
-        self._tabs.setUsesScrollButtons(False)  # 禁用标签栏滚动箭头
+        # 中间内容 = 侧边栏 + 页面栈
+        content = QFrame()
+        content.setObjectName("contentArea")
+        content_layout = QHBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
 
-        # 服务器设置
-        self._tabs.addTab(self._create_server_tab(), "服务器")
+        # --- 侧边栏 ---
+        self._sidebar = QListWidget()
+        self._sidebar.setObjectName("sidebar")
+        self._sidebar.setFixedWidth(180)
+        self._sidebar.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._sidebar.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._sidebar.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
-        # 外观设置
-        self._tabs.addTab(self._create_appearance_tab(), "外观")
+        # 导航项：(图标名, 标签文字)
+        nav_items = [
+            ("globe", "服务器"),
+            ("palette", "外观"),
+            ("keyboard", "快捷键"),
+            ("sliders", "交互"),
+            ("zap", "主动对话"),
+            ("database", "存储"),
+            ("droplet", "配色"),
+            ("download", "更新"),
+        ]
 
-        # 快捷键设置
-        self._tabs.addTab(self._create_hotkeys_tab(), "快捷键")
+        c = theme_manager.get_current_colors()
+        for icon_name, label in nav_items:
+            item = QListWidgetItem()
+            item.setText(label)
+            item.setIcon(icon_manager.get_icon(icon_name, c.text_secondary, 18))
+            item.setSizeHint(QSize(180, 44))
+            self._sidebar.addItem(item)
 
-        # 交互设置
-        self._tabs.addTab(self._create_interaction_tab(), "交互")
+        content_layout.addWidget(self._sidebar)
 
-        # 主动对话设置
-        self._tabs.addTab(self._create_proactive_tab(), "主动对话")
+        # --- 页面栈 ---
+        self._pages = QStackedWidget()
+        self._pages.setObjectName("pages")
 
-        # 存储设置
-        self._tabs.addTab(self._create_storage_tab(), "存储")
+        self._pages.addWidget(self._create_server_tab())
+        self._pages.addWidget(self._create_appearance_tab())
+        self._pages.addWidget(self._create_hotkeys_tab())
+        self._pages.addWidget(self._create_interaction_tab())
+        self._pages.addWidget(self._create_proactive_tab())
+        self._pages.addWidget(self._create_storage_tab())
+        self._pages.addWidget(self._create_custom_colors_tab())
+        self._pages.addWidget(self._create_update_tab())
 
-        # 自定义颜色设置
-        self._tabs.addTab(self._create_custom_colors_tab(), "配色")
+        content_layout.addWidget(self._pages, 1)
 
-        # 更新设置
-        self._tabs.addTab(self._create_update_tab(), "更新")
+        self._sidebar.currentRowChanged.connect(self._pages.setCurrentIndex)
+        self._sidebar.setCurrentRow(0)
 
-        main_layout.addWidget(self._tabs, 1)
+        main_layout.addWidget(content, 1)
 
         # 底部按钮
         bottom_bar = self._create_bottom_bar()
@@ -260,21 +288,21 @@ class SettingsWindow(QWidget):
         """创建标题栏"""
         title_bar = QFrame()
         title_bar.setObjectName("titleBar")
-        title_bar.setFixedHeight(50)
+        title_bar.setFixedHeight(56)
 
         layout = QHBoxLayout(title_bar)
-        layout.setContentsMargins(16, 0, 16, 0)
+        layout.setContentsMargins(24, 0, 24, 0)
 
+        c = theme_manager.get_current_colors()
         icon = QLabel()
         icon.setObjectName("titleIcon")
-        # 使用 SVG 图标
-        c = theme_manager.get_current_colors()
-        icon.setPixmap(icon_manager.get_pixmap("settings", c.primary, 20))
+        icon.setPixmap(icon_manager.get_pixmap("settings", c.primary, 22))
 
         title = QLabel("设置")
         title.setObjectName("titleText")
 
         layout.addWidget(icon)
+        layout.addSpacing(8)
         layout.addWidget(title)
         layout.addStretch()
 
@@ -284,7 +312,7 @@ class SettingsWindow(QWidget):
         """创建服务器设置标签页"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setContentsMargins(24, 24, 24, 24)
 
         # 服务器地址
         section = SettingsSection("服务器配置")
@@ -342,7 +370,7 @@ class SettingsWindow(QWidget):
         # 滚动内容容器
         scroll_content = QWidget()
         layout = QVBoxLayout(scroll_content)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setContentsMargins(24, 24, 24, 24)
 
         # 主题设置
         theme_section = SettingsSection("主题设置")
@@ -597,7 +625,7 @@ class SettingsWindow(QWidget):
         """创建快捷键设置标签页"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setContentsMargins(24, 24, 24, 24)
 
         section = SettingsSection("快捷键配置")
 
@@ -643,7 +671,7 @@ class SettingsWindow(QWidget):
         # 滚动内容容器
         scroll_content = QWidget()
         layout = QVBoxLayout(scroll_content)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setContentsMargins(24, 24, 24, 24)
 
         # 交互模式
         mode_section = SettingsSection("交互模式")
@@ -722,7 +750,7 @@ class SettingsWindow(QWidget):
         """创建存储设置标签页"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setContentsMargins(24, 24, 24, 24)
 
         section = SettingsSection("本地存储")
 
@@ -827,7 +855,7 @@ class SettingsWindow(QWidget):
         # 滚动内容容器
         scroll_content = QWidget()
         layout = QVBoxLayout(scroll_content)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setContentsMargins(24, 24, 24, 24)
 
         # 启用自定义颜色
         enable_section = SettingsSection("启用设置")
@@ -1153,7 +1181,7 @@ class SettingsWindow(QWidget):
         # 滚动内容容器
         scroll_content = QWidget()
         layout = QVBoxLayout(scroll_content)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setContentsMargins(24, 24, 24, 24)
 
         # 更新模式设置
         mode_section = SettingsSection("更新模式")
@@ -1460,7 +1488,7 @@ class SettingsWindow(QWidget):
         # 滚动内容容器
         scroll_content = QWidget()
         layout = QVBoxLayout(scroll_content)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setContentsMargins(24, 24, 24, 24)
 
         # 基础设置
         basic_section = SettingsSection("基础设置")
@@ -1574,22 +1602,25 @@ class SettingsWindow(QWidget):
         """创建底部按钮栏"""
         bar = QFrame()
         bar.setObjectName("bottomBar")
-        bar.setFixedHeight(60)
+        bar.setFixedHeight(64)
 
         layout = QHBoxLayout(bar)
-        layout.setContentsMargins(16, 0, 16, 0)
+        layout.setContentsMargins(24, 0, 24, 0)
 
         layout.addStretch()
 
         self._reset_btn = QPushButton("重置")
         self._reset_btn.setObjectName("resetBtn")
+        self._reset_btn.setFixedSize(90, 36)
         self._reset_btn.clicked.connect(self._on_reset)
 
         self._save_btn = QPushButton("保存")
         self._save_btn.setObjectName("saveBtn")
+        self._save_btn.setFixedSize(90, 36)
         self._save_btn.clicked.connect(self._on_save)
 
         layout.addWidget(self._reset_btn)
+        layout.addSpacing(12)
         layout.addWidget(self._save_btn)
 
         return bar
@@ -1599,122 +1630,146 @@ class SettingsWindow(QWidget):
         self._apply_theme()
 
     def _apply_theme(self):
-        """应用主题样式"""
+        """应用主题样式 — 侧边栏导航 + 卡片式布局"""
         t = theme_manager.current_theme
-        c = (
-            theme_manager.get_current_colors()
-        )  # 使用 get_current_colors() 获取应用了自定义颜色的最终配置
+        c = theme_manager.get_current_colors()
+
+        # 更新侧边栏图标颜色
+        nav_icons = ["globe", "palette", "keyboard", "sliders", "zap", "database", "droplet", "download"]
+        for i, icon_name in enumerate(nav_icons):
+            if i < self._sidebar.count():
+                item = self._sidebar.item(i)
+                if item is not None:
+                    item.setIcon(icon_manager.get_icon(icon_name, c.text_secondary, 18))
 
         self.setStyleSheet(f"""
+            /* === 全局 === */
             QWidget {{
                 background-color: {c.bg_primary};
                 font-family: {t.font_family};
                 color: {c.text_primary};
+                font-size: {t.font_size_base}px;
             }}
-            
+
+            /* === 标题栏 === */
             QFrame#titleBar {{
                 background-color: {c.bg_secondary};
                 border-bottom: 1px solid {c.border_light};
             }}
-            
             QLabel#titleIcon {{
-                font-size: 24px;
                 background: transparent;
             }}
-            
             QLabel#titleText {{
-                font-size: {t.font_size_large}px;
-                font-weight: bold;
+                font-size: 16px;
+                font-weight: 600;
                 background: transparent;
-                line-height: 50px;
+                letter-spacing: 0.5px;
             }}
 
-            QTabWidget#settingsTabs {{
-                background-color: {c.bg_primary};
-            }}
-            QTabWidget#settingsTabs::pane {{
-                border: none;
-                background-color: {c.bg_primary};
-            }}
-            QTabBar::tab {{
+            /* === 侧边栏 === */
+            QListWidget#sidebar {{
                 background-color: {c.bg_secondary};
-                color: {c.text_secondary};
-                padding: 12px 20px;
                 border: none;
-                border-bottom: 2px solid transparent;
-                min-height: 40px;
+                border-right: 1px solid {c.border_light};
+                outline: none;
+                padding: 8px 0;
             }}
-            QTabBar::tab:selected {{
-                color: {c.primary};
-                border-bottom-color: {c.primary};
+            QListWidget#sidebar::item {{
+                padding: 0 20px;
+                border-radius: 0;
+                color: {c.text_secondary};
+                border-left: 3px solid transparent;
+                font-size: {t.font_size_base}px;
             }}
-            QTabBar::tab:hover {{
+            QListWidget#sidebar::item:selected {{
                 background-color: {c.bg_hover};
+                color: {c.primary};
+                border-left: 3px solid {c.primary};
+                font-weight: 600;
             }}
-            
+            QListWidget#sidebar::item:hover:!selected {{
+                background-color: {c.bg_hover};
+                color: {c.text_primary};
+            }}
+
+            /* === 页面栈背景 === */
+            QStackedWidget#pages {{
+                background-color: {c.bg_primary};
+            }}
+
+            /* === 分区标题 === */
             QLabel#sectionTitle {{
-                font-size: {t.font_size_base + 2}px;
-                font-weight: bold;
+                font-size: {t.font_size_base + 1}px;
+                font-weight: 600;
                 color: {c.text_primary};
                 background: transparent;
+                padding-bottom: 8px;
+                padding-left: 2px;
             }}
-            
+
+            /* === 分区卡片 === */
             QFrame#sectionContent {{
                 background-color: {c.bg_secondary};
                 border: 1px solid {c.border_light};
-                border-radius: {t.border_radius}px;
+                border-radius: 10px;
             }}
-            
+
+            /* === 设置行标签 === */
             QLabel#settingLabel {{
                 color: {c.text_secondary};
                 background: transparent;
-                min-height: 24px;
-                line-height: 24px;
+                font-size: {t.font_size_base}px;
             }}
-
             QLabel#infoLabel {{
                 color: {c.text_secondary};
                 background: transparent;
+                font-size: {t.font_size_base - 1}px;
                 line-height: 1.6;
             }}
 
+            /* === 输入控件 === */
             QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QKeySequenceEdit, QTimeEdit {{
                 background-color: {c.bg_primary};
                 border: 1px solid {c.border_light};
-                border-radius: {t.border_radius}px;
-                padding: 6px 10px;
+                border-radius: 8px;
+                padding: 7px 12px;
                 color: {c.text_primary};
-                min-height: 28px;
+                min-height: 20px;
+                selection-background-color: {c.primary_light};
             }}
-            QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QKeySequenceEdit:focus, QTimeEdit:focus {{
+            QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus,
+            QKeySequenceEdit:focus, QTimeEdit:focus {{
                 border-color: {c.primary};
             }}
-            
+            QLineEdit:hover, QComboBox:hover, QSpinBox:hover, QDoubleSpinBox:hover {{
+                border-color: {c.border_base};
+            }}
+
+            /* 下拉框 */
             QComboBox::drop-down {{
                 border: none;
-                width: 30px;
+                width: 28px;
             }}
             QComboBox::down-arrow {{
                 image: none;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
                 border-top: 5px solid {c.text_secondary};
                 margin-right: 10px;
             }}
-
-            /* 下拉框列表样式 */
             QComboBox QAbstractItemView {{
                 background-color: {c.bg_primary};
                 border: 1px solid {c.border_light};
-                border-radius: {t.border_radius}px;
+                border-radius: 8px;
                 selection-background-color: {c.bg_hover};
                 selection-color: {c.text_primary};
                 outline: none;
+                padding: 4px;
             }}
             QComboBox QAbstractItemView::item {{
-                min-height: 28px;
-                padding: 6px 10px;
-                color: {c.text_primary};
+                min-height: 30px;
+                padding: 6px 12px;
+                border-radius: 6px;
             }}
             QComboBox QAbstractItemView::item:hover {{
                 background-color: {c.bg_hover};
@@ -1725,53 +1780,62 @@ class SettingsWindow(QWidget):
             }}
 
             /* 隐藏数值输入框的增减按钮 */
-            QSpinBox::up-button, QDoubleSpinBox::up-button {{
-                width: 0px;
-                border: none;
-            }}
+            QSpinBox::up-button, QDoubleSpinBox::up-button,
             QSpinBox::down-button, QDoubleSpinBox::down-button {{
                 width: 0px;
                 border: none;
             }}
 
+            /* === 复选框 === */
             QCheckBox {{
                 color: {c.text_primary};
                 spacing: 8px;
+                font-size: {t.font_size_base}px;
             }}
             QCheckBox::indicator {{
                 width: 18px;
                 height: 18px;
-                border-radius: 4px;
-                border: 1px solid {c.border_base};
+                border-radius: 5px;
+                border: 1.5px solid {c.border_base};
+                background-color: {c.bg_primary};
+            }}
+            QCheckBox::indicator:hover {{
+                border-color: {c.primary};
             }}
             QCheckBox::indicator:checked {{
                 background-color: {c.primary};
                 border-color: {c.primary};
             }}
-            
+
+            /* === 头像预览 === */
             QLabel#avatarPreview {{
                 background-color: {c.bg_tertiary};
-                border-radius: 32px;
-                font-size: 32px;
+                border-radius: 24px;
+                font-size: 28px;
             }}
-            
+
+            /* === 按钮 === */
             QPushButton {{
                 background-color: {c.bg_secondary};
                 border: 1px solid {c.border_light};
-                border-radius: {t.border_radius}px;
-                padding: 6px 14px;
+                border-radius: 8px;
+                padding: 7px 16px;
                 color: {c.text_primary};
-                min-height: 28px;
+                font-size: {t.font_size_base}px;
             }}
             QPushButton:hover {{
                 background-color: {c.bg_hover};
+                border-color: {c.border_base};
+            }}
+            QPushButton:pressed {{
+                background-color: {c.bg_tertiary};
             }}
 
-            /* 清除颜色按钮样式 */
+            /* 清除颜色按钮 */
             QPushButton#clearColorBtn {{
                 background-color: transparent;
                 border: 1px solid {c.border_light};
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 0px;
                 min-height: 24px;
             }}
@@ -1779,94 +1843,100 @@ class SettingsWindow(QWidget):
                 background-color: {c.bg_hover};
                 border-color: {c.danger};
             }}
-            QPushButton#clearColorBtn:pressed {{
-                background-color: {c.danger};
-            }}
-            
+
+            /* 保存按钮 */
             QPushButton#saveBtn {{
                 background-color: {c.primary};
                 color: white;
                 border: none;
-                font-weight: bold;
-                min-width: 80px;
+                font-weight: 600;
+                border-radius: 8px;
             }}
             QPushButton#saveBtn:hover {{
                 background-color: {c.primary_dark};
             }}
-            
+            QPushButton#saveBtn:pressed {{
+                background-color: {c.primary};
+            }}
+
+            /* 重置按钮 */
+            QPushButton#resetBtn {{
+                background-color: transparent;
+                border: 1px solid {c.border_light};
+            }}
+            QPushButton#resetBtn:hover {{
+                background-color: {c.bg_hover};
+            }}
+
+            /* 测试连接按钮 */
             QPushButton#testBtn {{
                 background-color: {c.success};
                 color: white;
                 border: none;
+                border-radius: 8px;
             }}
             QPushButton#testBtn:hover {{
                 background-color: #218838;
             }}
-            
+
+            /* 危险按钮 */
             QPushButton#dangerBtn {{
-                background-color: #dc3545;
-                color: white;
-                border: none;
+                background-color: transparent;
+                color: {c.danger};
+                border: 1px solid {c.danger};
+                border-radius: 8px;
             }}
             QPushButton#dangerBtn:hover {{
-                background-color: #c82333;
+                background-color: {c.danger};
+                color: white;
             }}
-            
+
+            /* === 底部栏 === */
             QFrame#bottomBar {{
                 background-color: {c.bg_secondary};
                 border-top: 1px solid {c.border_light};
             }}
 
-            /* 滚动条样式 */
+            /* === 滚动条 === */
             QScrollBar:vertical {{
-                background-color: {c.bg_secondary};
-                width: 12px;
-                border-radius: 6px;
-                margin: 0px;
+                background-color: transparent;
+                width: 8px;
+                border-radius: 4px;
+                margin: 4px 2px;
             }}
             QScrollBar::handle:vertical {{
                 background-color: {c.border_base};
-                border-radius: 6px;
+                border-radius: 4px;
                 min-height: 30px;
             }}
             QScrollBar::handle:vertical:hover {{
                 background-color: {c.text_secondary};
             }}
-            QScrollBar::handle:vertical:pressed {{
-                background-color: {c.primary};
-            }}
-            QScrollBar::add-line:vertical,
-            QScrollBar::sub-line:vertical {{
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
                 height: 0px;
             }}
-            QScrollBar::add-page:vertical,
-            QScrollBar::sub-page:vertical {{
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
                 background: none;
             }}
 
             QScrollBar:horizontal {{
-                background-color: {c.bg_secondary};
-                height: 12px;
-                border-radius: 6px;
-                margin: 0px;
+                background-color: transparent;
+                height: 8px;
+                border-radius: 4px;
+                margin: 2px 4px;
             }}
             QScrollBar::handle:horizontal {{
                 background-color: {c.border_base};
-                border-radius: 6px;
+                border-radius: 4px;
                 min-width: 30px;
             }}
             QScrollBar::handle:horizontal:hover {{
                 background-color: {c.text_secondary};
             }}
-            QScrollBar::handle:horizontal:pressed {{
-                background-color: {c.primary};
-            }}
-            QScrollBar::add-line:horizontal,
-            QScrollBar::sub-line:horizontal {{
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
                 width: 0px;
             }}
-            QScrollBar::add-page:horizontal,
-            QScrollBar::sub-page:horizontal {{
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
                 background: none;
             }}
         """)
