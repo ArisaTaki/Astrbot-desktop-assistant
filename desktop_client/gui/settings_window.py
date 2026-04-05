@@ -383,6 +383,54 @@ class SettingsWindow(QWidget):
 
         layout.addWidget(theme_section)
 
+        # 显示模式
+        mode_section = SettingsSection("显示模式")
+
+        self._display_mode = QComboBox()
+        self._display_mode.addItem("悬浮球", "ball")
+        self._display_mode.addItem("Live2D 看板娘", "live2d")
+        self._display_mode.setToolTip("选择桌面助手的显示方式（切换后需重启生效）")
+        self._display_mode.currentIndexChanged.connect(self._on_display_mode_changed)
+        mode_section.add_row("显示方式", self._display_mode)
+
+        # Live2D 模型路径
+        live2d_path_row = QFrame()
+        live2d_path_layout = QHBoxLayout(live2d_path_row)
+        live2d_path_layout.setContentsMargins(0, 0, 0, 0)
+        live2d_path_layout.setSpacing(8)
+
+        self._live2d_model_path = QLineEdit()
+        self._live2d_model_path.setPlaceholderText("选择 .model3.json 文件路径")
+        self._live2d_model_path.setReadOnly(True)
+
+        self._browse_live2d_btn = QPushButton("浏览...")
+        self._browse_live2d_btn.setFixedWidth(80)
+        self._browse_live2d_btn.clicked.connect(self._on_browse_live2d_model)
+
+        live2d_path_layout.addWidget(self._live2d_model_path)
+        live2d_path_layout.addWidget(self._browse_live2d_btn)
+
+        mode_section.add_row("Live2D 模型", live2d_path_row, orientation="vertical")
+
+        # Live2D 缩放
+        self._live2d_scale = QDoubleSpinBox()
+        self._live2d_scale.setRange(0.1, 5.0)
+        self._live2d_scale.setSingleStep(0.1)
+        self._live2d_scale.setValue(1.0)
+        self._live2d_scale.setToolTip("Live2D 模型缩放比例")
+        mode_section.add_row("模型缩放", self._live2d_scale)
+
+        # Live2D 提示
+        self._live2d_info = QLabel(
+            "提示：选择 Live2D 模式后需要重启应用生效。\n"
+            "需要 Cubism 3+ 格式的模型（.model3.json）。"
+        )
+        self._live2d_info.setWordWrap(True)
+        self._live2d_info.setObjectName("infoLabel")
+        mode_section.add_widget(self._live2d_info)
+
+        layout.addWidget(mode_section)
+
         # 头像设置
         avatar_section = SettingsSection("头像设置")
 
@@ -2043,6 +2091,19 @@ class SettingsWindow(QWidget):
 
             if hasattr(self.config.appearance, "background_blur"):
                 self._bg_blur.setValue(self.config.appearance.background_blur)
+
+            # Live2D 配置
+            if hasattr(self.config.appearance, "display_mode"):
+                for i in range(self._display_mode.count()):
+                    if self._display_mode.itemData(i) == self.config.appearance.display_mode:
+                        self._display_mode.setCurrentIndex(i)
+                        break
+            if hasattr(self.config.appearance, "live2d_model_path"):
+                self._live2d_model_path.setText(self.config.appearance.live2d_model_path or "")
+            if hasattr(self.config.appearance, "live2d_scale"):
+                self._live2d_scale.setValue(self.config.appearance.live2d_scale)
+            # 更新 Live2D 控件可见性
+            self._on_display_mode_changed(self._display_mode.currentIndex())
         else:
             self._user_avatar_path = ""
             self._bot_avatar_path = ""
@@ -2283,6 +2344,24 @@ class SettingsWindow(QWidget):
         if theme_name:
             theme_manager.set_theme(theme_name)
 
+    def _on_display_mode_changed(self, index: int):
+        """显示模式切换时，控制 Live2D 相关控件的可见性"""
+        is_live2d = self._display_mode.itemData(index) == "live2d"
+        self._live2d_model_path.setEnabled(is_live2d)
+        self._browse_live2d_btn.setEnabled(is_live2d)
+        self._live2d_scale.setEnabled(is_live2d)
+
+    def _on_browse_live2d_model(self):
+        """浏览 Live2D 模型文件"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择 Live2D 模型文件",
+            self._live2d_model_path.text() or "",
+            "Live2D 模型 (*.model3.json)",
+        )
+        if file_path:
+            self._live2d_model_path.setText(file_path)
+
     def _on_upload_avatar(self):
         """上传悬浮球头像"""
         file_path, _ = QFileDialog.getOpenFileName(
@@ -2471,6 +2550,9 @@ class SettingsWindow(QWidget):
                 "background_image_path": getattr(self, "_bg_image_path", ""),
                 "background_opacity": self._bg_opacity.value(),
                 "background_blur": self._bg_blur.value(),
+                "display_mode": self._display_mode.currentData(),
+                "live2d_model_path": self._live2d_model_path.text().strip(),
+                "live2d_scale": self._live2d_scale.value(),
             },
             "hotkeys": {
                 "global_enabled": self._global_hotkeys.isChecked(),
@@ -2555,6 +2637,9 @@ class SettingsWindow(QWidget):
             self.config.appearance.background_blur = settings["appearance"][
                 "background_blur"
             ]
+            self.config.appearance.display_mode = settings["appearance"]["display_mode"]
+            self.config.appearance.live2d_model_path = settings["appearance"]["live2d_model_path"]
+            self.config.appearance.live2d_scale = settings["appearance"]["live2d_scale"]
 
             # 快捷键
             self.config.hotkeys.global_enabled = settings["hotkeys"]["global_enabled"]

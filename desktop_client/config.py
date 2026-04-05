@@ -341,7 +341,7 @@ class UpdateConfig:
     # 更新后自动重启
     auto_restart: bool = False
     # GitHub 仓库地址
-    repo_url: str = "https://github.com/muyouzhi6/Astrbot-desktop-assistant"
+    repo_url: str = "https://github.com/ArisaTaki/Astrbot-desktop-assistant"
     # 当前版本（从 git commit 获取）
     current_version: str = ""
     # 更新模式: "release" = 稳定版(GitHub Release), "git" = 最新版(Git 最新代码)
