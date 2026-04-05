@@ -17,7 +17,7 @@ import sys
 import math
 from enum import Enum
 
-from PySide6.QtCore import (
+from PySide6.QtCore import (  # type: ignore[import-not-found]
     Qt,
     QPoint,
     QTimer,
@@ -29,7 +29,7 @@ from PySide6.QtCore import (
     QSize,
     QRectF,
 )
-from PySide6.QtGui import (
+from PySide6.QtGui import (  # type: ignore[import-not-found]
     QPixmap,
     QPainter,
     QBrush,
@@ -41,7 +41,7 @@ from PySide6.QtGui import (
     QImage,
     QCursor,
 )
-from PySide6.QtWidgets import (
+from PySide6.QtWidgets import (  # type: ignore[import-not-found]
     QWidget,
     QLabel,
     QVBoxLayout,
@@ -71,15 +71,15 @@ from ..services import get_chat_history_manager, ChatMessage
 # macOS 窗口置顶支持
 # 使用 PyObjC 设置 NSWindow.level 实现真正的置顶效果
 _HAS_PYOBJC = False
-_NSFloatingWindowLevel = 3  # NSFloatingWindowLevel 常量值
+_NSFloatingWindowLevel: int = 3  # NSFloatingWindowLevel 常量值
 _NSNormalWindowLevel = 0
 _CAPTURE_SETTLE_MS = 180 if sys.platform == "darwin" else 50
 _CAPTURE_RESTORE_SETTLE_MS = 80 if sys.platform == "darwin" else 0
 
 if sys.platform == "darwin":
     try:
-        from AppKit import (
-            NSFloatingWindowLevel as _NSFloatingWindowLevel,
+        from AppKit import (  # type: ignore[import-untyped,no-redef]
+            NSFloatingWindowLevel as _NSFloatingWindowLevel,  # type: ignore[attr-defined]
         )
 
         _HAS_PYOBJC = True
@@ -109,7 +109,7 @@ def _set_macos_window_level(widget: QWidget, level: Optional[int] = None):
         window_id = widget.winId()
         if window_id:
             # 通过 NSApp 获取所有窗口，找到匹配的窗口
-            from AppKit import NSApp
+            from AppKit import NSApp  # type: ignore[import-untyped,attr-defined]
 
             for ns_window in NSApp.windows():
                 # 检查窗口编号是否匹配
@@ -126,11 +126,11 @@ def _set_macos_window_level(widget: QWidget, level: Optional[int] = None):
 
             # 如果上述方法失败，尝试使用 Objective-C runtime
             try:
-                import objc
+                import objc  # type: ignore[import-untyped]
 
                 # 将 window_id 转换为 NSWindow 对象
                 # PySide6 的 winId() 返回的是 NSView 的指针
-                ns_view = objc.objc_object(c_void_p=int(window_id))
+                ns_view = objc.objc_object(c_void_p=int(window_id))  # type: ignore[attr-defined]
                 if hasattr(ns_view, "window") and ns_view.window():
                     ns_window = ns_view.window()
                     ns_window.setLevel_(actual_level)
@@ -201,8 +201,8 @@ class CompactChatWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self._max_history = max_history
-        self._message_history = []  # [(msg_type, content, is_user), ...]
-        self._attachment_path = None
+        self._message_history: list = []  # [(msg_type, content, is_user), ...]
+        self._attachment_path: Optional[str] = None
         self._is_waiting = False
 
         # 自动隐藏定时器
@@ -212,7 +212,7 @@ class CompactChatWindow(QWidget):
         self._auto_hide_enabled = False
         self._auto_hide_duration = 5000  # 默认5秒
         self._current_ai_message = ""
-        self._current_ai_label = None  # 当前 AI 回复的 MarkdownLabel
+        self._current_ai_label: Optional[MarkdownLabel] = None  # 当前 AI 回复的 MarkdownLabel
         self._current_ai_message_id: str = ""  # 当前流式响应的消息ID
 
         # 已显示消息ID集合，用于避免重复显示
@@ -430,41 +430,6 @@ class CompactChatWindow(QWidget):
         # 历史记录将由 FloatingBallWindow 在头像设置完成后统一加载
         # 移除这里的延迟加载，避免与 FloatingBallWindow 中的 reload_history_display 产生竞态条件
         # 见 FloatingBallWindow.__init__ 中的 QTimer.singleShot(150, self._compact_window.reload_history_display)
-
-
-    def _prepare_visual_capture(self):
-        """截图/桌面识别前的统一处理：
-        1. 记录当前显示状态
-        2. 隐藏聊天窗和悬浮球
-        3. 避免置顶窗口污染截图/识别结果
-        """
-        if self._capture_prepared:
-            return
-
-        self._chat_window_was_visible = self._compact_window.isVisible()
-        self._ball_was_visible = self.isVisible()
-
-        if self._chat_window_was_visible:
-            self._compact_window.hide()
-
-        if self._ball_was_visible:
-            self.hide()
-
-        self._capture_prepared = True
-
-    def _restore_after_visual_capture(self):
-        """截图/桌面识别后恢复显示状态"""
-        if not self._capture_prepared:
-            return
-
-        if self._ball_was_visible:
-            self.show()
-
-        if self._chat_window_was_visible:
-            self._compact_window.show()
-            self._update_compact_window_position()
-
-        self._capture_prepared = False
 
     def _on_theme_changed(self, theme: Theme):
         """主题切换时只更新样式，不重新加载历史"""
@@ -2589,10 +2554,10 @@ class FloatingBallWindow(QWidget):
         
         # 更新配置
         if hasattr(self.config, "appearance"):
-            self.config.appearance.theme = theme_name
+            self.config.appearance.theme = theme_name  # type: ignore[union-attr]
             # 保存配置到文件
             if hasattr(self.config, "save"):
-                self.config.save()
+                self.config.save()  # type: ignore[union-attr]
 
     def _on_region_screenshot(self):
         """区域截图"""
