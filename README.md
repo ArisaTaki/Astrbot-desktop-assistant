@@ -93,6 +93,21 @@ pip install -r requirements.txt
 python -m desktop_client
 ```
 
+### macOS 打包版启动
+
+本仓库现在默认以正式 `.app` 作为 macOS 日常入口：
+
+```bash
+./scripts/build_macos_app.sh
+open -n "dist/AstrBot Desktop Assistant.app"
+```
+
+说明：
+
+- `python -m desktop_client` 仍然适合开发调试
+- `dist/AstrBot Desktop Assistant.app` 适合日常使用、截图权限授权、开机自启
+- `start.command` 与桌面快捷方式都会优先打开 `dist` 里的正式 app
+
 ### 连接服务端
 
 1. 右键看板娘 → 选择「设置」
@@ -141,7 +156,40 @@ python -m desktop_client
 
 - 系统要求：macOS 10.14+ / Python 3.10+
 - Live2D 鼠标穿透需要 `pyobjc-framework-Cocoa`（安装脚本自动处理）
-- 首次启动可能需要在系统偏好设置中授权辅助功能权限
+- 首次启动打包版 app 时，需要在系统设置中授权“录屏与系统录音”
+- 开机自启现在以 `dist/AstrBot Desktop Assistant.app` 为准，不再依赖 `.command` 或终端后台命令
+
+### macOS 开发 / 打包 / 发布工作流
+
+开发调试：
+
+```bash
+cd /path/to/Astrbot-desktop-assistant
+./.venv/bin/python -m desktop_client
+```
+
+一键重新打包：
+
+```bash
+cd /path/to/Astrbot-desktop-assistant
+./scripts/build_macos_app.sh
+```
+
+生成 GitHub Release 产物并发布：
+
+```bash
+cd /path/to/Astrbot-desktop-assistant
+./scripts/release_macos_app.sh v1.0.0
+```
+
+`release_macos_app.sh` 会执行：
+
+- 重新打包 `dist/AstrBot Desktop Assistant.app`
+- 生成 `dist/AstrBot-Desktop-Assistant-<version>-macos.zip`
+- 创建并推送 git tag
+- 如果本机已安装并登录 `gh`，自动创建 GitHub Release
+
+如果只想本地打包，不发 release，只执行 `./scripts/build_macos_app.sh` 即可。
 
 ### Linux
 
