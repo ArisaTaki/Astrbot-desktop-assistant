@@ -143,8 +143,6 @@ class SettingsController(QObject):
                 self._config.server.username = server["username"]
             if "password" in server:
                 self._config.server.password = server["password"]
-            if "enable_streaming" in server:
-                self._config.server.enable_streaming = server["enable_streaming"]
             need_reconnect = True
 
         return need_reconnect

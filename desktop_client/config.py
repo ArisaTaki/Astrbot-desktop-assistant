@@ -73,8 +73,6 @@ class ServerConfig:
     max_reconnect_attempts: int = 0
     # 请求超时
     request_timeout: int = 30  # 秒
-    # 是否启用流式输出
-    enable_streaming: bool = True
     # [已废弃] WebSocket 服务端口。默认为 6190，表示复用 API 端口 (统一端口模式)。
     # 如果设置为其他值，将尝试连接该特定端口 (兼容旧版插件)。
     ws_port: int = 6190

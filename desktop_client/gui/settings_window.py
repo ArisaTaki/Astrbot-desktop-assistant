@@ -341,9 +341,6 @@ class SettingsWindow(QWidget):
         )
         section.add_row("WebSocket 地址 (可选)", self._ws_url)
 
-        self._enable_streaming = QCheckBox("启用流式输出 (打字机效果)")
-        section.add_widget(self._enable_streaming)
-
         # 测试连接按钮
         self._test_btn = QPushButton("测试连接")
         self._test_btn.setObjectName("testBtn")
@@ -2019,7 +2016,6 @@ class SettingsWindow(QWidget):
             self._username.setText(self.config.server.username or "")
             self._password.setText(self.config.server.password or "")
             self._ws_url.setText(self.config.server.ws_url or "")
-            self._enable_streaming.setChecked(self.config.server.enable_streaming)
         elif isinstance(self.config, dict):  # Dict
             self._server_url.setText(self.config.get("server_url", ""))
             self._username.setText(self.config.get("username", ""))
@@ -2557,7 +2553,7 @@ class SettingsWindow(QWidget):
                 "username": self._username.text(),
                 "password": self._password.text(),
                 "ws_url": self._ws_url.text(),
-                "enable_streaming": self._enable_streaming.isChecked(),
+
             },
             "appearance": {
                 "theme": self._theme_combo.currentData(),
@@ -2632,7 +2628,6 @@ class SettingsWindow(QWidget):
             self.config.server.username = settings["server"]["username"]
             self.config.server.password = settings["server"]["password"]
             self.config.server.ws_url = settings["server"]["ws_url"]
-            self.config.server.enable_streaming = settings["server"]["enable_streaming"]
 
             # 外观
             self.config.appearance.theme = settings["appearance"]["theme"]

@@ -182,7 +182,7 @@ class MessageBridge(QObject):
             logger.debug(f"发送请求: {request_id}, 类型: {msg.msg_type}")
 
             # 根据消息类型发送
-            streaming = self.config.server.enable_streaming
+            streaming = False
 
             if msg.msg_type == "text":
                 logger.info(f"发送文本消息: session_id={session_id}, content_len={len(msg.content)}")
