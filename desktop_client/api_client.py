@@ -1585,6 +1585,9 @@ class AstrBotApiClient:
         message: str | list,
         selected_provider: Optional[str] = None,
         selected_model: Optional[str] = None,
+        sender_id: Optional[str] = None,
+        sender_name: Optional[str] = None,
+        user_nickname: Optional[str] = None,
         enable_streaming: bool = True,
     ) -> AsyncGenerator[SSEEvent, None]:
         """
@@ -1615,6 +1618,12 @@ class AstrBotApiClient:
             body["selected_provider"] = selected_provider
         if selected_model:
             body["selected_model"] = selected_model
+        if sender_id:
+            body["sender_id"] = sender_id
+        if sender_name:
+            body["sender_name"] = sender_name
+        if user_nickname:
+            body["user_nickname"] = user_nickname
 
         # 为每个请求创建独立的客户端（关键：避免消息错位）
         # 使用独立连接确保响应流不会混淆

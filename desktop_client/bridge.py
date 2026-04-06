@@ -17,6 +17,7 @@ from PySide6.QtCore import QObject, Signal
 
 from .api_client import AstrBotApiClient, SSEEvent, ConnectionState
 from .config import ClientConfig
+from .services import get_chat_history_manager
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,8 @@ class MessageBridge(QObject):
                     if session_ok:
                         self.config.session_id = session_result
                         self.config.save()
+                if self.config.session_id:
+                    get_chat_history_manager().set_current_session(self.config.session_id)
                 # Token 验证成功后也启动健康检测
                 await self.api_client.start_health_check()
                 return True, "连接成功 (Token)"
@@ -131,6 +134,8 @@ class MessageBridge(QObject):
                     self.config.save()
                 else:
                     return False, f"创建会话失败: {session_result}"
+            if self.config.session_id:
+                get_chat_history_manager().set_current_session(self.config.session_id)
 
             # login() 内部已经启动健康检测，无需重复
 
@@ -176,6 +181,8 @@ class MessageBridge(QObject):
                 )
                 return
 
+            get_chat_history_manager().set_current_session(session_id)
+
             # 生成唯一请求ID
             request_id = self._generate_request_id()
             self._current_request_id = request_id
@@ -186,14 +193,25 @@ class MessageBridge(QObject):
 
             if msg.msg_type == "text":
                 text_content = msg.content
-                # 如果配置了昵称，附加到消息中让 AI 知道如何称呼用户
                 nickname = self.config.server.nickname
+                sender_name = nickname.strip() or self.config.server.username or "桌面用户"
+                sender_id = (
+                    f"desktop:{self.config.server.username}"
+                    if self.config.server.username
+                    else "desktop_user"
+                )
                 if nickname:
-                    text_content = f"[用户称呼: {nickname}]\n{text_content}"
+                    text_content = (
+                        f"[系统提示] 当前用户的显示昵称是“{nickname}”。"
+                        f" 回复时请优先使用这个昵称，不要使用登录用户名或账号名。\n{text_content}"
+                    )
                 logger.info(f"发送文本消息: session_id={session_id}, content_len={len(text_content)}")
                 async for event in self.api_client.send_text_message(
                     session_id=session_id,
                     text=text_content,
+                    sender_id=sender_id,
+                    sender_name=sender_name,
+                    user_nickname=nickname,
                     enable_streaming=streaming,
                 ):
                     logger.debug(f"收到 SSE 事件: type={event.event_type}")
@@ -201,10 +219,20 @@ class MessageBridge(QObject):
                     await asyncio.sleep(0)
 
             elif msg.msg_type in ("image", "screenshot"):
+                nickname = self.config.server.nickname
+                sender_name = nickname.strip() or self.config.server.username or "桌面用户"
+                sender_id = (
+                    f"desktop:{self.config.server.username}"
+                    if self.config.server.username
+                    else "desktop_user"
+                )
                 async for event in self.api_client.send_image_message(
                     session_id=session_id,
                     image_path=msg.content,
                     text=msg.metadata.get("text", ""),
+                    sender_id=sender_id,
+                    sender_name=sender_name,
+                    user_nickname=nickname,
                     enable_streaming=streaming,
                 ):
                     self._handle_sse_event(event, session_id, request_id)
