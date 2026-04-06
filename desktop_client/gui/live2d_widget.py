@@ -14,6 +14,7 @@ Live2D 角色窗口
 """
 
 from typing import Optional
+import math
 import os
 import sys
 
@@ -31,6 +32,8 @@ from PySide6.QtGui import (  # type: ignore[import-not-found]
     QMouseEvent,
     QCursor,
     QGuiApplication,
+    QPainter,
+    QColor,
 )
 from PySide6.QtWidgets import (  # type: ignore[import-not-found]
     QMenu,
@@ -113,12 +116,19 @@ class Live2DCharacterWindow(QOpenGLWidget):
         self._capture_prepared = False
         self._capture_prepare_depth = 0
 
+        # 呼吸灯 / 未读指示器
+        self._breathing = True
+        self._breath_phase = 0.0
+        self._pulse_phase = 0.0
+        self._indicator_timer = QTimer(self)
+        self._indicator_timer.setInterval(50)
+        self._indicator_timer.timeout.connect(self._update_indicator)
+        self._indicator_timer.start()
+
         # 精简版对话窗口（与 FloatingBallWindow 相同）
         self._compact_window = CompactChatWindow(config=self.config)
         self._compact_window.message_sent.connect(self.message_sent)
         self._compact_window.image_sent.connect(self.image_sent)
-        self._compact_window.window_moved.connect(self._on_compact_window_moved)
-        self._compact_window.window_resized.connect(self._on_compact_window_resized)
 
         # 加载用户和Bot头像
         self._load_avatars_from_config()
@@ -146,6 +156,14 @@ class Live2DCharacterWindow(QOpenGLWidget):
         self._model = live2d.LAppModel()
         self._model.LoadModelJson(self._model_path)
         self._gl_initialized = True
+
+        # 应用缩放
+        scale = 1.0
+        if hasattr(self.config, "appearance"):
+            scale = getattr(self.config.appearance, "live2d_scale", 1.0) or 1.0
+        if scale != 1.0 and hasattr(self._model, "SetScale"):
+            self._model.SetScale(scale)
+
         # 以约 60fps 进行渲染
         self.startTimer(int(1000 / 60))
 
@@ -158,6 +176,9 @@ class Live2DCharacterWindow(QOpenGLWidget):
         if self._model:
             self._model.Update()
             self._model.Draw()
+
+        # 在 OpenGL 内容之上叠加绘制状态指示器
+        self._draw_status_indicator()
 
     def timerEvent(self, event: QTimerEvent) -> None:
         if not self.isVisible():
@@ -380,7 +401,11 @@ class Live2DCharacterWindow(QOpenGLWidget):
     # ==================== 截图隐藏/恢复 ====================
 
     def _prepare_for_capture(self):
-        """截图/桌面识别前的统一处理"""
+        """截图/桌面识别前的统一处理
+        
+        对于 QOpenGLWidget，避免使用 hide() 因为会销毁 GL 上下文。
+        改用设置透明度为 0 + 移到屏幕外的方式隐藏。
+        """
         self._capture_prepare_depth += 1
         if self._capture_prepared:
             return
@@ -404,8 +429,9 @@ class Live2DCharacterWindow(QOpenGLWidget):
 
         if self._capture_restore_chat_visible:
             self._compact_window.hide()
+        # 对 QOpenGLWidget 使用移到屏幕外代替 hide()，避免 GL 上下文丢失
         if self._capture_restore_ball_visible:
-            self.hide()
+            self.move(-9999, -9999)
 
         QApplication.processEvents()
         _wait_for_window_server(_CAPTURE_SETTLE_MS)
@@ -427,7 +453,6 @@ class Live2DCharacterWindow(QOpenGLWidget):
                 self.setWindowOpacity(
                     getattr(self, "_capture_restore_ball_opacity", 1.0)
                 )
-                self.show()
                 self.raise_()
             else:
                 self.setWindowOpacity(
@@ -505,25 +530,62 @@ class Live2DCharacterWindow(QOpenGLWidget):
 
         self._compact_window.move(x, y)
 
-    def _on_compact_window_moved(self, delta_x: int, delta_y: int):
-        """当聊天窗口被拖动时，同步移动角色"""
-        new_x = self.x() + delta_x
-        new_y = self.y() + delta_y
-        self.move(new_x, new_y)
+    # ==================== 状态指示器 ====================
 
-    def _on_compact_window_resized(self):
-        """当精简窗口大小改变时，调整位置"""
-        center_x_ball = self.x() + self.width() // 2
-        center_x_win = self._compact_window.x() + self._compact_window.width() // 2
-        spacing = 10
-        if center_x_ball > center_x_win:
-            expected_x = self._compact_window.x() + self._compact_window.width() + spacing
-            if abs(self.x() - expected_x) > 2:
-                self.move(expected_x, self.y())
-        else:
-            expected_x = self._compact_window.x() - self.width() - spacing
-            if abs(self.x() - expected_x) > 2:
-                self.move(expected_x, self.y())
+    def _update_indicator(self):
+        """更新呼吸灯 / 未读红点动画相位"""
+        if self._has_unread:
+            self._pulse_phase += 0.12
+            if self._pulse_phase > 2 * math.pi:
+                self._pulse_phase -= 2 * math.pi
+        if self._breathing:
+            self._breath_phase += 0.04
+            if self._breath_phase > 2 * math.pi:
+                self._breath_phase -= 2 * math.pi
+
+    def _draw_status_indicator(self):
+        """在 GL 内容之上绘制状态指示器（未读红点 / 呼吸灯）"""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # 指示器位置：右上角
+        cx = self.width() - 24
+        cy = 24
+
+        if self._has_unread:
+            # 未读消息 —— 红点 + 脉冲外发光
+            pulse_scale = 1.0 + 0.3 * math.sin(self._pulse_phase)
+            dot_r = int(8 * pulse_scale)
+
+            # 外发光
+            pulse_alpha = int(100 + 80 * math.sin(self._pulse_phase))
+            for i in range(4, 0, -1):
+                painter.setBrush(QColor(255, 80, 80, int(pulse_alpha * (1 - i / 5))))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawEllipse(QPoint(cx, cy), dot_r + i * 2, dot_r + i * 2)
+
+            # 红点
+            painter.setBrush(QColor(255, 59, 48))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(QPoint(cx, cy), dot_r, dot_r)
+
+        elif self._breathing:
+            # 呼吸灯 —— 微弱绿色光点
+            breath_alpha = int(80 + 60 * math.sin(self._breath_phase))
+            breath_r = int(5 + 2 * math.sin(self._breath_phase))
+
+            # 柔和外发光
+            for i in range(3, 0, -1):
+                painter.setBrush(QColor(76, 217, 100, int(breath_alpha * (1 - i / 4))))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawEllipse(QPoint(cx, cy), breath_r + i * 2, breath_r + i * 2)
+
+            # 主光点
+            painter.setBrush(QColor(76, 217, 100, breath_alpha + 40))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(QPoint(cx, cy), breath_r, breath_r)
+
+        painter.end()
 
     # ==================== 代理方法（与 FloatingBallWindow 兼容） ====================
 
@@ -567,8 +629,8 @@ class Live2DCharacterWindow(QOpenGLWidget):
         self._compact_window.set_bot_avatar(avatar_path)
 
     def set_breathing(self, enabled: bool):
-        """兼容接口，Live2D 不需要呼吸灯"""
-        pass
+        """设置呼吸灯效果"""
+        self._breathing = enabled
 
     def update_appearance_config(self, config) -> None:
         """更新外观配置"""
@@ -576,6 +638,11 @@ class Live2DCharacterWindow(QOpenGLWidget):
             return
 
         appearance = config.appearance
+
+        # Live2D 缩放
+        scale = getattr(appearance, "live2d_scale", 1.0) or 1.0
+        if self._model and hasattr(self._model, "SetScale"):
+            self._model.SetScale(scale)
 
         bg_path = getattr(appearance, "background_image_path", "") or ""
         bg_opacity = getattr(appearance, "background_opacity", 0.3)

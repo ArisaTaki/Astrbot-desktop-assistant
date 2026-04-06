@@ -448,13 +448,15 @@ class CompactChatWindow(QWidget):
             theme_manager.get_current_colors()
         )  # 使用 get_current_colors() 获取应用了自定义颜色的最终配置
 
-        # 容器 - 如果有背景图则透明
+        r = t.border_radius + 4
+
+        # 容器 - 现代化阴影边框
         if self._has_background():
             self._container.setStyleSheet(f"""
                 QFrame#compactContainer {{
                     background-color: transparent;
                     border: 1px solid {c.border_light};
-                    border-radius: {t.border_radius + 4}px;
+                    border-radius: {r}px;
                 }}
             """)
         else:
@@ -462,28 +464,29 @@ class CompactChatWindow(QWidget):
                 QFrame#compactContainer {{
                     background-color: {c.bg_primary};
                     border: 1px solid {c.border_light};
-                    border-radius: {t.border_radius + 4}px;
+                    border-radius: {r}px;
                 }}
             """)
 
-        # 标题栏
+        # 标题栏 — 更紧凑, 带底部分隔线
         self._title_bar.setStyleSheet(f"""
             QFrame#compactTitleBar {{
                 background-color: {c.bg_secondary};
-                border-top-left-radius: {t.border_radius + 4}px;
-                border-top-right-radius: {t.border_radius + 4}px;
+                border-top-left-radius: {r}px;
+                border-top-right-radius: {r}px;
                 border-bottom: 1px solid {c.border_light};
             }}
             QLabel#compactTitleLabel {{
                 color: {c.text_primary};
                 font-family: {t.font_family};
                 font-size: {t.font_size_base}px;
-                font-weight: bold;
+                font-weight: 600;
                 background: transparent;
+                letter-spacing: 0.3px;
             }}
         """)
 
-        # 关闭按钮（使用图标）
+        # 关闭按钮 — 更柔和的 hover
         self._close_btn.setStyleSheet(f"""
             QPushButton#compactCloseBtn {{
                 background: transparent;
@@ -491,7 +494,7 @@ class CompactChatWindow(QWidget):
                 border-radius: 12px;
             }}
             QPushButton#compactCloseBtn:hover {{
-                background-color: #ff4d4f;
+                background-color: rgba(255, 77, 79, 0.85);
             }}
         """)
         self._close_btn.setIcon(icon_manager.get_icon("close", c.text_secondary, 14))
@@ -511,73 +514,87 @@ class CompactChatWindow(QWidget):
         self._clear_btn.setIcon(icon_manager.get_icon("trash", c.text_secondary, 14))
         self._clear_btn.setIconSize(QSize(14, 14))
 
-        # 滚动区
+        # 滚动区 — 更细的滚动条
         self._scroll_area.setStyleSheet(f"""
             QScrollArea#compactScroll {{
                 background: transparent;
                 border: none;
             }}
             QScrollArea#compactScroll QScrollBar:vertical {{
-                background: {c.bg_secondary};
-                width: 6px;
-                border-radius: 3px;
+                background: transparent;
+                width: 5px;
+                border-radius: 2px;
+                margin: 4px 1px;
             }}
             QScrollArea#compactScroll QScrollBar::handle:vertical {{
+                background: {c.border_base};
+                border-radius: 2px;
+                min-height: 24px;
+            }}
+            QScrollArea#compactScroll QScrollBar::handle:vertical:hover {{
                 background: {c.text_secondary};
-                border-radius: 3px;
-                min-height: 20px;
             }}
             QScrollArea#compactScroll QScrollBar::add-line:vertical,
             QScrollArea#compactScroll QScrollBar::sub-line:vertical {{
                 height: 0px;
             }}
+            QScrollArea#compactScroll QScrollBar::add-page:vertical,
+            QScrollArea#compactScroll QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
         """)
 
         self._history_widget.setStyleSheet("background: transparent;")
 
-        # 输入框
+        # 输入框 — 现代化, 带 focus 高亮和 selection 颜色
         self._input.setStyleSheet(f"""
             QTextEdit {{
                 background-color: {c.bg_secondary};
-                border: 1px solid {c.border_light};
-                border-radius: {t.border_radius}px;
-                padding: 8px;
+                border: 1.5px solid {c.border_light};
+                border-radius: {t.border_radius + 2}px;
+                padding: 8px 10px;
                 font-family: {t.font_family};
                 font-size: {t.font_size_base}px;
                 color: {c.text_primary};
+                selection-background-color: {c.primary_light};
             }}
             QTextEdit:focus {{
-                border: 1px solid {c.primary};
+                border-color: {c.primary};
             }}
         """)
 
-        # 发送按钮
+        # 发送按钮 — 带过渡感
         self._send_btn.setStyleSheet(f"""
             QPushButton#compactSendBtn {{
                 background-color: {c.primary};
                 color: white;
                 border: none;
-                border-radius: {t.border_radius}px;
-                font-weight: bold;
+                border-radius: {t.border_radius + 2}px;
+                font-weight: 600;
+                font-size: {t.font_size_base}px;
             }}
             QPushButton#compactSendBtn:hover {{
                 background-color: {c.primary_dark};
+            }}
+            QPushButton#compactSendBtn:pressed {{
+                background-color: {c.primary};
             }}
             QPushButton#compactSendBtn:disabled {{
                 background-color: {c.text_secondary};
             }}
         """)
 
-        # 附件按钮
+        # 附件按钮 — 更柔和
         self._attach_btn.setStyleSheet(f"""
             QPushButton#compactAttachBtn {{
                 background-color: {c.bg_secondary};
                 color: {c.text_primary};
-                border: 1px solid {c.border_light};
-                border-radius: {t.border_radius}px;
+                border: 1.5px solid {c.border_light};
+                border-radius: {t.border_radius + 2}px;
             }}
             QPushButton#compactAttachBtn:hover {{
                 background-color: {c.bg_hover};
+                border-color: {c.border_base};
             }}
         """)
         # 设置附件图标
