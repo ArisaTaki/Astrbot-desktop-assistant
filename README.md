@@ -1,115 +1,69 @@
-# 🎈 AstrBot 桌面助手 —— 你的桌面 AI 陪伴
+# 🎈 AstrBot 桌面助手 —— Live2D 看板娘 + 桌面 AI 陪伴
 
 <div align="center">
 
-[![CI](https://github.com/muyouzhi6/Astrbot-desktop-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/muyouzhi6/Astrbot-desktop-assistant/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue)](https://www.python.org/)
 [![PySide6](https://img.shields.io/badge/PySide6-6.5%2B-green)](https://wiki.qt.io/Qt_for_Python)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
-**一个安静陪伴你的桌面悬浮球，随时可聊、随时可见**
+**基于 [muyouzhi6/Astrbot-desktop-assistant](https://github.com/muyouzhi6/Astrbot-desktop-assistant) 的 Live2D 增强 Fork**
 
-[⚡ 快速安装](#-快速安装) · [✨ 核心功能](#-核心功能) · [🔌 附加能力](#-附加能力qq-远程功能) · [🍎 平台说明](#-平台特别说明)
+*在桌面角落放一个会动、有表情、能聊天的 Live2D 看板娘*
 
-</div>
-
----
-
-## 🌈 为什么选择桌面助手？
-
-想象一下，有一个 AI 伙伴：
-
-- 🎈 **随时可见** —— 一个小巧的悬浮球，安静地待在你的桌面角落
-- 💬 **随时可聊** —— 点一下就能对话，不需要打开任何网页或 App
-- 👀 **能看懂你的屏幕** —— 遇到报错？让它帮你分析，不用复制粘贴
-- 🤗 **主动关心你** —— 发现你长时间工作，会温柔提醒你休息
-
-这不只是一个工具，而是一个**陪伴**。
-
----
-
-## 🎈 悬浮球：你的桌面 AI 伙伴
-
-<div align="center">
-
-```
-     ╭──────────────────────────────────╮
-     │                                  │
-     │    🟢  ← 悬浮球：你的 AI 伙伴     │
-     │                                  │
-     │    点击即可对话                   │
-     │    它能看懂你的屏幕               │
-     │    它会主动关心你                 │
-     │                                  │
-     ╰──────────────────────────────────╯
-```
+[✨ 新增功能](#-本-fork-新增功能) · [⚡ 快速安装](#-快速安装) · [🎭 Live2D 配置](#-live2d-看板娘配置) · [🍎 平台说明](#-平台特别说明)
 
 </div>
 
-### 悬浮球的独特之处
+---
 
-| 特点 | 传统 AI 聊天 | 桌面悬浮球 |
-|------|-------------|-----------|
-| **存在感** | 需要打开网页/App | 始终在桌面陪伴你 |
-| **交互方式** | 主动去找它 | 它就在那里，点一下即可 |
-| **屏幕理解** | 需要复制粘贴 | 直接"看懂"你的屏幕 |
-| **主动性** | 只会被动回答 | 会主动关心你的状态 |
-| **情感连接** | 冷冰冰的工具 | 温暖的陪伴感 |
+## 🆚 与上游版本的区别
+
+本仓库 Fork 自 [muyouzhi6/Astrbot-desktop-assistant](https://github.com/muyouzhi6/Astrbot-desktop-assistant)，上游版本提供悬浮球形态的桌面 AI 助手。本 Fork 在保留全部原有功能的基础上，增加了 **Live2D 看板娘** 显示模式。
+
+| 特性 | 上游版本 | 本 Fork |
+|------|---------|---------|
+| 显示形态 | 悬浮球 | 悬浮球 **+ Live2D 看板娘** |
+| 桌面交互 | 悬浮球点击 | 看板娘点击 + 鼠标穿透透明区域 |
+| 状态指示 | 悬浮球颜色/呼吸灯 | **Live2D 表情变化**（笑眯眯/眼泪等） |
+| 设置界面 | 标签页式 | **侧边栏导航** + 图标 |
+| 对话框 | 紧贴悬浮球 | **屏幕居中弹出** + 气泡阴影 |
 
 ---
 
-## ✨ 核心功能
+## ✨ 本 Fork 新增功能
 
-### 💬 随时对话
+### 🎭 Live2D 看板娘
 
-点击悬浮球，打开对话窗口，和你的 AI 伙伴聊天。
+在桌面角落放置一个 Live2D 角色，替代传统悬浮球：
 
-```
-你：今天有点累...
-AI：我注意到你已经连续工作了 3 个小时了呢，要不要站起来活动一下？
-    我可以帮你设置一个 10 分钟后的提醒 ☕
-```
+- **透明窗口渲染** — OpenGL 实时渲染，透明背景融入桌面
+- **视线追踪** — 角色眼睛跟随鼠标移动
+- **鼠标穿透** — 透明区域完全穿透，不阻碍桌面操作（macOS 通过 `setIgnoresMouseEvents_` 实现）
+- **点击交互** — 仅模型不透明区域可点击，触发随机动作
+- **表情状态** — 通过 Live2D 参数控制表情：
+  - 正常 → 自然表情
+  - 未读消息 → 笑眯眯
+  - 连接断开 → 流泪
 
-**沉浸式对话体验**：
-- 📝 完整 Markdown 渲染（代码高亮、公式、表格）
-- 🖼️ 图片/文件拖拽发送
-- 🔊 语音消息自动播放
-- ⌨️ 快捷键发送（Enter/Shift+Enter）
+### 💬 对话框优化
 
-### 👀 屏幕感知
+- 屏幕居中弹出，类似 QQ 聊天窗口
+- 消息气泡带柔和投影阴影
+- 输入区分隔线视觉分层
+- 可拖拽、可调整大小
 
-AI 能"看到"你屏幕上的内容，帮你分析问题。
+### 🎨 设置界面重构
 
-```
-（你遇到一个代码报错）
-你：帮我看看这个报错
-AI：我看到了，这是一个 NullPointerException。
-    问题出在第 42 行，userService 没有被正确初始化。
-    你可以在调用前加上空值检查，或者检查依赖注入配置...
-```
+- 左侧栏导航 + 右侧内容面板（替代原版 Tab 页）
+- 8 个功能图标（SVG 动态着色）
+- Live2D 专属配置区（模型路径、缩放比例）
+- 所有控件 `:disabled` 状态样式
 
-### 🤗 主动交互
+### 🔧 其他改动
 
-AI 会根据屏幕内容，在合适的时机主动给你建议。
-
-```
-（你在浏览技术文章）
-AI：这篇关于 Rust 异步编程的文章不错！
-    需要我帮你总结一下关键点吗？
-
-（你长时间盯着代码发呆）
-AI：看起来遇到了难题？要不要说说你的思路，
-    我帮你梳理一下？
-```
-
-### 🚀 持续进化
-
-悬浮球是一个可扩展的能力平台，支持插件扩展：
-
-- 🔌 插件系统支持自定义扩展
-- 🎨 主题自适应（亮色/暗色自动切换）
-- ⚡ 全局热键快速唤起
-- 🖥️ 系统托盘后台常驻
+- 移除流式输出（`enable_streaming`），避免影响钩子函数运行
+- 截图时 Live2D 窗口移至屏幕外（保留 GL 上下文），截图完成后恢复
+- 对话窗口与 Live2D 位置解耦，可独立移动
 
 ---
 
@@ -117,56 +71,22 @@ AI：看起来遇到了难题？要不要说说你的思路，
 
 ### 前置条件
 
+- ✅ Python 3.9+（macOS 推荐 3.10+）
 - ✅ AstrBot 服务端已部署并运行
 - ✅ 已安装服务端插件 [astrbot_plugin_desktop_assistant](https://github.com/muyouzhi6/astrbot_plugin_desktop_assistant)
 
-### 🌟 方式一：一键安装（推荐）
-
-> 🚀 自动检测最快的下载源、安装依赖、配置开机自启、创建桌面快捷方式
-
-**Windows 用户**：
-
-打开 **PowerShell**（Win + X，选择 Windows Terminal），运行：
-
-```powershell
-irm "https://gh.llkk.cc/https://raw.githubusercontent.com/muyouzhi6/Astrbot-desktop-assistant/main/quick_install.bat" -OutFile "$env:TEMP\quick_install.bat"; Start-Process "$env:TEMP\quick_install.bat"
-```
-
-💡 也可以 [下载 quick_install.bat](https://gh.llkk.cc/https://raw.githubusercontent.com/muyouzhi6/Astrbot-desktop-assistant/main/quick_install.bat)，双击运行。
-
-**macOS / Linux 用户**：
-
-打开终端，运行：
+### 安装
 
 ```bash
-curl -fsSL https://gh.llkk.cc/https://raw.githubusercontent.com/muyouzhi6/Astrbot-desktop-assistant/main/quick_install.sh | bash
-```
-
-💡 也可以 [下载 quick_install.sh](https://gh.llkk.cc/https://raw.githubusercontent.com/muyouzhi6/Astrbot-desktop-assistant/main/quick_install.sh)，然后运行 `chmod +x quick_install.sh && ./quick_install.sh`。
-
-### 方式二：克隆后安装
-
-```bash
-# 克隆项目
-git clone https://github.com/muyouzhi6/Astrbot-desktop-assistant.git
+git clone https://github.com/ArisaTaki/Astrbot-desktop-assistant.git
 cd Astrbot-desktop-assistant
 
-# Windows：双击 install.bat
-# macOS/Linux：chmod +x install.sh && ./install.sh
-```
+# 创建虚拟环境
+python3 -m venv .venv
+source .venv/bin/activate  # macOS/Linux
+# 或 .venv\Scripts\activate  # Windows
 
-### 方式三：手动安装
-
-```bash
-git clone https://github.com/muyouzhi6/Astrbot-desktop-assistant.git
-cd Astrbot-desktop-assistant
-
-# 创建虚拟环境（推荐）
-python3 -m venv venv
-source venv/bin/activate  # Linux/macOS
-# 或 venv\Scripts\activate  # Windows
-
-# 安装依赖
+# 安装依赖（含 Live2D）
 pip install -r requirements.txt
 
 # 启动
@@ -175,66 +95,43 @@ python -m desktop_client
 
 ### 连接服务端
 
-首次启动后：
-
-1. 右键悬浮球 → 选择「设置」
-2. 填写服务器地址：
-   - 本地部署：`http://127.0.0.1:6185`
-   - 远程服务器：`http://你的服务器IP:6185`
-3. 填写用户名密码（AstrBot 管理员账号）
+1. 右键看板娘 → 选择「设置」
+2. 填写服务器地址（如 `http://127.0.0.1:6185`）
+3. 填写 AstrBot 管理员账号密码
 4. 保存设置
 
-点击悬浮球，说一声"你好"，你的桌面 AI 伙伴已经准备好了 🎉
+点击看板娘即可开始对话。
 
 ---
 
-## 🔌 附加能力：QQ 远程功能
+## 🎭 Live2D 看板娘配置
 
-> 🎁 **锦上添花**：如果你已经在用 AstrBot + NapCat，还可以解锁 QQ 远程能力
+### 切换显示模式
 
-除了桌面陪伴，你还可以通过 QQ 远程控制和查看电脑：
+在设置 → 外观 中选择：
 
-### 远程截图
-
-在 QQ 上发送命令，获取电脑实时画面：
-
-| 命令 | 功能 |
+| 模式 | 说明 |
 |------|------|
-| `.截图` 或 `.screenshot` | 截取桌面屏幕并返回图片 |
-| `.桌面状态` | 查看桌面客户端连接状态 |
+| 悬浮球 | 原版小圆球（默认） |
+| Live2D 看板娘 | Live2D 角色窗口 |
 
-### 使用场景
+### 模型配置
 
-- 出门在外，想看看电脑上的下载进度
-- 在 QQ 群里让 bot 帮你分析屏幕上的报错
-- 远程查看家里电脑的状态
+1. 准备一个 Live2D Cubism 3.0+ 模型（`.model3.json`）
+2. 在设置 → 外观 → Live2D 模型路径 中选择模型文件
+3. 通过缩放滑块调整模型大小
 
-```
-你（在 QQ 上）：.截图
-Bot：[返回你电脑的实时截图]
+> 模型需包含 `.moc3`、纹理文件和 `.model3.json`。推荐从 [Live2D 官方示例](https://www.live2d.com/learn/sample/) 或模型社区获取。
 
-你：帮我看看这个报错是什么问题
-Bot：根据截图，你的代码第 42 行有个 NullPointerException...
-```
+### 表情参数（可选）
 
-### 远程功能配置
+本 Fork 使用以下 Live2D 参数控制表情状态，模型若包含这些参数会自动生效：
 
-需要正确配置 WebSocket 连接：
-
-1. 确保服务端插件已启用
-2. 在客户端设置中配置 WebSocket 端口（默认 6190）
-3. 开放服务器防火墙端口 6190
-
-```bash
-# Linux (firewalld)
-sudo firewall-cmd --add-port=6190/tcp --permanent
-sudo firewall-cmd --reload
-
-# Linux (ufw)
-sudo ufw allow 6190/tcp
-```
-
-详细配置请参阅 [服务端插件文档](https://github.com/muyouzhi6/astrbot_plugin_desktop_assistant#-附加能力qq-远程功能)。
+| 参数 ID | 用途 |
+|---------|------|
+| `ParamExpression_1` | 眼泪（断连时） |
+| `ParamExpression_2` | 泪珠（断连时） |
+| `ParamExpression_3` | 笑眯眯（未读消息时） |
 
 ---
 
@@ -242,20 +139,11 @@ sudo ufw allow 6190/tcp
 
 ### macOS
 
-**系统要求**：macOS 10.14+ / Python 3.10+
-
-**悬浮球置顶**：自动安装 `pyobjc-framework-Cocoa` 实现窗口置顶。
-
-**常见问题**：
-
-| 问题 | 解决方案 |
-|------|----------|
-| 启动脚本双击无反应 | `chmod +x start.command` |
-| 依赖安装失败 | `xcode-select --install` |
+- 系统要求：macOS 10.14+ / Python 3.10+
+- Live2D 鼠标穿透需要 `pyobjc-framework-Cocoa`（安装脚本自动处理）
+- 首次启动可能需要在系统偏好设置中授权辅助功能权限
 
 ### Linux
-
-**系统依赖**：
 
 ```bash
 # Ubuntu/Debian
@@ -265,33 +153,9 @@ sudo apt install libgl1-mesa-glx libxcb-xinerama0 libxcb-cursor0 libegl1
 sudo dnf install mesa-libGL libxcb
 ```
 
-**Wayland 支持**：启动脚本自动设置 `QT_QPA_PLATFORM=wayland;xcb`。
-
 ### Windows
 
 开箱即用，无特殊依赖。
-
----
-
-## ⚙️ 开机自启配置
-
-### 自动配置（推荐）
-
-使用一键安装脚本时会提示配置开机自启。
-
-### 手动配置
-
-1. 右键悬浮球或系统托盘 → 选择「设置」
-2. 在「通用设置」中勾选「开机自启动」
-3. 保存设置
-
-### 故障排查
-
-| 平台 | 检查方法 |
-|------|----------|
-| Windows | 注册表 `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` |
-| macOS | `launchctl list \| grep astrbot` |
-| Linux | `~/.config/autostart/astrbot-desktop-assistant.desktop` |
 
 ---
 
@@ -299,43 +163,21 @@ sudo dnf install mesa-libGL libxcb
 
 ```
 desktop_client/
-├── gui/          # 界面组件（悬浮球、聊天窗口、设置）
-├── handlers/     # 消息处理器（消息、截图、主动对话）
-├── platforms/    # 平台适配器（Windows/macOS/Linux）
-├── services/     # 核心服务（API通信、截图、桌面监控）
-├── plugins/      # 插件系统
-├── config.py     # 配置管理
-├── bridge.py     # 消息桥接层
-└── main.py       # 程序入口
+├── gui/
+│   ├── floating_ball.py     # 悬浮球 + 对话窗口
+│   ├── live2d_widget.py     # Live2D 看板娘窗口
+│   ├── settings_window.py   # 设置界面（侧边栏导航）
+│   ├── themes.py            # 主题系统
+│   ├── icons.py             # SVG 图标管理
+│   └── markdown_utils.py    # Markdown 渲染
+├── handlers/                # 消息处理器
+├── controllers/             # 设置控制器
+├── platforms/               # 平台适配（Win/Mac/Linux）
+├── services/                # 截图、桌面监控等服务
+├── config.py                # 配置管理
+├── bridge.py                # 消息桥接层
+└── main.py                  # 程序入口
 ```
-
-详细架构说明请参阅 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
-
----
-
-## 🤝 参与贡献
-
-我们欢迎任何形式的贡献！
-
-```bash
-# Fork 并克隆项目
-git clone https://github.com/YOUR_USERNAME/Astrbot-desktop-assistant.git
-cd Astrbot-desktop-assistant
-
-# 创建虚拟环境
-python -m venv venv
-source venv/bin/activate  # Linux/macOS
-
-# 安装依赖并运行测试
-pip install -r requirements.txt
-pytest
-```
-
-| 资源 | 说明 |
-|------|------|
-| [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献指南 |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构文档 |
-| [Issue 模板](.github/ISSUE_TEMPLATE/) | 报告 Bug / 功能请求 |
 
 ---
 
@@ -343,31 +185,25 @@ pytest
 
 | 资源 | 链接 |
 |------|------|
+| 🔌 上游项目 | [muyouzhi6/Astrbot-desktop-assistant](https://github.com/muyouzhi6/Astrbot-desktop-assistant) |
 | 🔌 服务端插件 | [astrbot_plugin_desktop_assistant](https://github.com/muyouzhi6/astrbot_plugin_desktop_assistant) |
-| 🔊 TTS 语音插件 | [astrbot_plugin_tts_emotion_router](https://github.com/muyouzhi6/astrbot_plugin_tts_emotion_router) |
+| 🎭 live2d-py | [live2d-py](https://github.com/Arkueid/live2d-py) |
 | 🤖 AstrBot 主项目 | [AstrBot](https://github.com/Soulter/AstrBot) |
 
 ---
 
 ## 📄 许可证
 
-MIT License
+MIT License — 基于 [muyouzhi6/Astrbot-desktop-assistant](https://github.com/muyouzhi6/Astrbot-desktop-assistant) 的 Fork。
+
+原项目作者及开发 QQ 群：215532038
 
 ---
 
 <div align="center">
 
-**不只是工具，而是陪伴**
+*让 Live2D 看板娘成为你的桌面 AI 伙伴*
 
-*桌面悬浮球 —— 让 AI 真正成为你的伙伴*
-
-[报告问题](https://github.com/muyouzhi6/Astrbot-desktop-assistant/issues) · [参与讨论](https://github.com/muyouzhi6/Astrbot-desktop-assistant/discussions) · [参与贡献](CONTRIBUTING.md)
-
-
-本插件开发QQ群：215532038
-
-<img width="1284" height="2289" alt="qrcode_1767584668806" src="https://github.com/user-attachments/assets/113ccf60-044a-47f3-ac8f-432ae05f89ee" />
-
-
+[报告问题](https://github.com/ArisaTaki/Astrbot-desktop-assistant/issues) · [上游项目](https://github.com/muyouzhi6/Astrbot-desktop-assistant)
 
 </div>
