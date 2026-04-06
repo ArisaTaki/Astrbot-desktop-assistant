@@ -11,6 +11,7 @@ set -e
 # 获取脚本所在目录
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
+APP_BUNDLE="$SCRIPT_DIR/dist/AstrBot Desktop Assistant.app"
 
 # 颜色定义
 RED='\033[0;31m'
@@ -143,8 +144,12 @@ start_app() {
     echo "======================================"
     echo ""
     
-    # 启动应用
-    python -m desktop_client
+    if [ ! -d "$APP_BUNDLE" ]; then
+        print_info "未找到正式 app，开始构建..."
+        "$SCRIPT_DIR/scripts/build_macos_app.sh"
+    fi
+
+    open -n "$APP_BUNDLE"
     
     EXIT_CODE=$?
     if [ $EXIT_CODE -ne 0 ]; then

@@ -9,6 +9,7 @@ macOS 平台适配器
 
 import os
 import sys
+import subprocess
 from pathlib import Path
 from typing import List
 
@@ -35,7 +36,8 @@ class MacOSPlatformAdapter(IPlatformAdapter):
     """macOS 平台适配器"""
 
     # LaunchAgent plist 名称
-    LAUNCH_AGENT_NAME = "com.astrbot.desktop-client"
+    LAUNCH_AGENT_NAME = "com.astrbot.desktop-assistant"
+    LEGACY_LAUNCH_AGENT_NAME = "com.hacchiroku.astrbot-desktop"
 
     @property
     def platform_name(self) -> str:
@@ -105,6 +107,10 @@ class MacOSPlatformAdapter(IPlatformAdapter):
         """获取 plist 文件路径"""
         return self._get_launch_agents_dir() / f"{self.LAUNCH_AGENT_NAME}.plist"
 
+    def _get_legacy_plist_path(self) -> Path:
+        """获取旧版 plist 文件路径。"""
+        return self._get_launch_agents_dir() / f"{self.LEGACY_LAUNCH_AGENT_NAME}.plist"
+
     def _get_app_path(self) -> str:
         """获取应用程序路径"""
         if getattr(sys, "frozen", False):
@@ -117,16 +123,46 @@ class MacOSPlatformAdapter(IPlatformAdapter):
         if getattr(sys, "frozen", False):
             return [sys.executable]
         else:
+            app_bundle = (
+                self._get_working_directory_path()
+                / "dist"
+                / "AstrBot Desktop Assistant.app"
+            )
+            if app_bundle.exists():
+                return ["/usr/bin/open", "-n", str(app_bundle), "--args", "--autostart"]
             return [sys.executable, "-m", "desktop_client"]
+
+    def _get_working_directory_path(self) -> Path:
+        """获取工作目录路径"""
+        if getattr(sys, "frozen", False):
+            return Path(os.path.dirname(sys.executable))
+
+        # 获取项目根目录（desktop_client 的父目录）
+        module_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        return Path(os.path.dirname(module_path))
 
     def _get_working_directory(self) -> str:
         """获取工作目录"""
+        return str(self._get_working_directory_path())
+
+    def _ensure_launcher_app(self) -> None:
+        """确保 macOS 正式 app 已生成。"""
         if getattr(sys, "frozen", False):
-            return os.path.dirname(sys.executable)
-        else:
-            # 获取项目根目录（desktop_client 的父目录）
-            module_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            return os.path.dirname(module_path)
+            return
+
+        project_root = self._get_working_directory_path()
+        app_bundle = project_root / "dist" / "AstrBot Desktop Assistant.app"
+        if app_bundle.exists():
+            return
+
+        script_path = project_root / "scripts" / "build_macos_app.sh"
+        if not script_path.exists():
+            return
+
+        try:
+            subprocess.run([str(script_path)], cwd=str(project_root), check=True)
+        except Exception as e:
+            print(f"[macOS] 构建正式 app 失败: {e}")
 
     def _generate_plist_content(self) -> str:
         """生成 plist 文件内容"""
@@ -159,9 +195,15 @@ class MacOSPlatformAdapter(IPlatformAdapter):
     def enable_autostart(self) -> Result:
         """启用开机自启"""
         try:
+            self._ensure_launcher_app()
             # 确保 LaunchAgents 目录存在
             launch_agents_dir = self._get_launch_agents_dir()
             launch_agents_dir.mkdir(parents=True, exist_ok=True)
+
+            legacy_plist_path = self._get_legacy_plist_path()
+            if legacy_plist_path.exists():
+                os.system(f'launchctl unload "{legacy_plist_path}"')
+                legacy_plist_path.unlink()
 
             # 写入 plist 文件
             plist_path = self._get_plist_path()
@@ -183,6 +225,7 @@ class MacOSPlatformAdapter(IPlatformAdapter):
         """禁用开机自启"""
         try:
             plist_path = self._get_plist_path()
+            legacy_plist_path = self._get_legacy_plist_path()
 
             if plist_path.exists():
                 # 卸载 LaunchAgent
@@ -190,6 +233,10 @@ class MacOSPlatformAdapter(IPlatformAdapter):
                 # 删除 plist 文件
                 plist_path.unlink()
                 print("[macOS] 已禁用开机自启")
+
+            if legacy_plist_path.exists():
+                os.system(f'launchctl unload "{legacy_plist_path}"')
+                legacy_plist_path.unlink()
 
             return Result.success("开机自启已禁用")
         except PermissionError:
@@ -202,7 +249,8 @@ class MacOSPlatformAdapter(IPlatformAdapter):
         """检查是否已启用开机自启"""
         try:
             plist_path = self._get_plist_path()
-            return plist_path.exists()
+            legacy_plist_path = self._get_legacy_plist_path()
+            return plist_path.exists() or legacy_plist_path.exists()
         except Exception as e:
             print(f"[macOS] 检查开机自启状态失败: {e}")
             return False

@@ -1,3 +1,8 @@
 #!/bin/bash
-cd "/Users/hacchiroku/bot-stack/Astrbot-desktop-assistant"
-"/Users/hacchiroku/bot-stack/Astrbot-desktop-assistant/venv/bin/python" -m desktop_client
+set -e
+
+PROJECT_DIR="/Users/hacchiroku/bot-stack/Astrbot-desktop-assistant"
+APP_BUNDLE="$PROJECT_DIR/dist/AstrBot Desktop Assistant.app"
+
+cd "$PROJECT_DIR"
+open -n "$APP_BUNDLE"

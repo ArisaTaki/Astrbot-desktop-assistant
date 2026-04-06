@@ -95,7 +95,7 @@ setup_venv() {
     echo ""
     echo -e "${CYAN}[2/5]${NC} 配置 Python 环境..."
     
-    VENV_DIR="$SCRIPT_DIR/venv"
+    VENV_DIR="$SCRIPT_DIR/.venv"
     USE_VENV=0
     
     if [[ -f "$VENV_DIR/bin/python" ]]; then
@@ -186,16 +186,22 @@ setup_autostart() {
 setup_macos_autostart() {
     PLIST_DIR="$HOME/Library/LaunchAgents"
     PLIST_FILE="$PLIST_DIR/com.astrbot.desktop-assistant.plist"
+    LEGACY_PLIST_FILE="$PLIST_DIR/com.hacchiroku.astrbot-desktop.plist"
+    APP_BUNDLE="$SCRIPT_DIR/dist/AstrBot Desktop Assistant.app"
     
     mkdir -p "$PLIST_DIR"
-    
-    # 确定 Python 路径
-    if [[ $USE_VENV -eq 1 ]]; then
-        PYTHON_PATH="$VENV_DIR/bin/python"
-    else
-        PYTHON_PATH=$(which $PYTHON_CMD)
+    mkdir -p "$HOME/.astrbot"
+
+    if [[ ! -d "$APP_BUNDLE" ]]; then
+        echo "正在构建正式 macOS 应用..."
+        "$SCRIPT_DIR/scripts/build_macos_app.sh" >/dev/null
     fi
-    
+
+    if [[ -f "$LEGACY_PLIST_FILE" ]]; then
+        launchctl unload "$LEGACY_PLIST_FILE" 2>/dev/null
+        rm -f "$LEGACY_PLIST_FILE"
+    fi
+
     cat > "$PLIST_FILE" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -205,9 +211,10 @@ setup_macos_autostart() {
     <string>com.astrbot.desktop-assistant</string>
     <key>ProgramArguments</key>
     <array>
-        <string>$PYTHON_PATH</string>
-        <string>-m</string>
-        <string>desktop_client</string>
+        <string>/usr/bin/open</string>
+        <string>-n</string>
+        <string>$APP_BUNDLE</string>
+        <string>--args</string>
         <string>--autostart</string>
     </array>
     <key>WorkingDirectory</key>
@@ -297,27 +304,16 @@ create_shortcut() {
 
 # macOS 快捷方式（应用程序别名）
 create_macos_shortcut() {
-    # 创建启动脚本
-    LAUNCH_SCRIPT="$SCRIPT_DIR/AstrBot Desktop Assistant.command"
-    
-    if [[ $USE_VENV -eq 1 ]]; then
-        PYTHON_PATH="$VENV_DIR/bin/python"
-    else
-        PYTHON_PATH=$(which $PYTHON_CMD)
+    APP_BUNDLE="$SCRIPT_DIR/dist/AstrBot Desktop Assistant.app"
+    if [[ ! -d "$APP_BUNDLE" ]]; then
+        "$SCRIPT_DIR/scripts/build_macos_app.sh" >/dev/null
     fi
-    
-    cat > "$LAUNCH_SCRIPT" << EOF
-#!/bin/bash
-cd "$SCRIPT_DIR"
-"$PYTHON_PATH" -m desktop_client
-EOF
-    
-    chmod +x "$LAUNCH_SCRIPT"
     
     # 复制到桌面
     DESKTOP="$HOME/Desktop"
     if [[ -d "$DESKTOP" ]]; then
-        cp "$LAUNCH_SCRIPT" "$DESKTOP/"
+        rm -rf "$DESKTOP/AstrBot Desktop Assistant.app"
+        cp -R "$APP_BUNDLE" "$DESKTOP/"
         echo -e "${GREEN}✓ 桌面快捷方式已创建${NC}"
     else
         echo -e "${YELLOW}⚠ 未找到桌面目录${NC}"
@@ -376,8 +372,8 @@ finish_install() {
     echo ""
     echo "启动方式："
     echo "  • 双击桌面快捷方式"
-    echo "  • 或运行 ./start.sh"
-    echo "  • 或在命令行执行：$PYTHON_CMD -m desktop_client"
+    echo "  • 或运行 ./start.command"
+    echo "  • 开发调试可执行：$PYTHON_CMD -m desktop_client"
     echo ""
     
     # 询问是否立即启动
@@ -390,10 +386,13 @@ finish_install() {
     if [[ "$START_CHOICE" == "1" ]]; then
         echo ""
         echo "正在启动..."
-        
-        # 后台启动应用
-        "$PYTHON_CMD" -m desktop_client &
-        
+
+        if [[ "$OS" == "macos" ]]; then
+            APP_BUNDLE="$SCRIPT_DIR/dist/AstrBot Desktop Assistant.app"
+            /usr/bin/open -n "$APP_BUNDLE"
+        else
+            "$PYTHON_CMD" -m desktop_client &
+        fi
         echo -e "${GREEN}✓ 应用已启动${NC}"
     fi
     

@@ -19,7 +19,7 @@ WHITE='\033[1;37m'
 NC='\033[0m' # No Color
 
 # GitHub 仓库地址
-GITHUB_REPO="https://github.com/muyouzhi6/Astrbot-desktop-assistant.git"
+GITHUB_REPO="https://github.com/ArisaTaki/Astrbot-desktop-assistant.git"
 
 # 加速代理列表
 PROXY_HOSTS=("gh.llkk.cc" "gh-proxy.com" "mirror.ghproxy.com" "ghproxy.net")
@@ -261,7 +261,7 @@ fi
 echo ""
 echo -e "${CYAN}[4/6]${NC} 配置 Python 环境..."
 
-VENV_DIR="$PROJECT_DIR/venv"
+VENV_DIR="$PROJECT_DIR/.venv"
 
 if [[ -f "$VENV_DIR/bin/python" ]]; then
     echo -e "${GREEN}✓ 虚拟环境已存在${NC}"
@@ -316,20 +316,15 @@ fi
 
 # macOS 配置
 if [[ "$OS" == "macos" ]]; then
-    # 创建桌面快捷方式
-    LAUNCH_SCRIPT="$PROJECT_DIR/AstrBot Desktop Assistant.command"
-    
-    cat > "$LAUNCH_SCRIPT" << EOF
-#!/bin/bash
-cd "$PROJECT_DIR"
-"$PYTHON_PATH" -m desktop_client
-EOF
-    
-    chmod +x "$LAUNCH_SCRIPT"
+    APP_BUNDLE="$PROJECT_DIR/dist/AstrBot Desktop Assistant.app"
+    LEGACY_PLIST_FILE="$HOME/Library/LaunchAgents/com.hacchiroku.astrbot-desktop.plist"
+    echo -e "${CYAN}正在构建正式 macOS 应用...${NC}"
+    "$PROJECT_DIR/scripts/build_macos_app.sh" >/dev/null
     
     DESKTOP="$HOME/Desktop"
     if [[ -d "$DESKTOP" ]]; then
-        cp "$LAUNCH_SCRIPT" "$DESKTOP/"
+        rm -rf "$DESKTOP/AstrBot Desktop Assistant.app"
+        cp -R "$APP_BUNDLE" "$DESKTOP/"
         echo -e "${GREEN}✓ 桌面快捷方式已创建${NC}"
     fi
     
@@ -338,6 +333,12 @@ EOF
     PLIST_FILE="$PLIST_DIR/com.astrbot.desktop-assistant.plist"
     
     mkdir -p "$PLIST_DIR"
+    mkdir -p "$HOME/.astrbot"
+
+    if [[ -f "$LEGACY_PLIST_FILE" ]]; then
+        launchctl unload "$LEGACY_PLIST_FILE" 2>/dev/null
+        rm -f "$LEGACY_PLIST_FILE"
+    fi
     
     cat > "$PLIST_FILE" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -348,9 +349,10 @@ EOF
     <string>com.astrbot.desktop-assistant</string>
     <key>ProgramArguments</key>
     <array>
-        <string>$PYTHON_PATH</string>
-        <string>-m</string>
-        <string>desktop_client</string>
+        <string>/usr/bin/open</string>
+        <string>-n</string>
+        <string>$APP_BUNDLE</string>
+        <string>--args</string>
         <string>--autostart</string>
     </array>
     <key>WorkingDirectory</key>
@@ -439,7 +441,7 @@ echo -e "${GREEN}║  项目目录: $PROJECT_DIR${NC}"
 echo -e "${GREEN}║                                                                      ║${NC}"
 echo -e "${GREEN}║  启动方式:                                                           ║${NC}"
 echo -e "${GREEN}║    • 双击桌面快捷方式                                                ║${NC}"
-echo -e "${GREEN}║    • 或运行 ./start.sh                                               ║${NC}"
+echo -e "${GREEN}║    • 或运行 ./start.command                                          ║${NC}"
 echo -e "${GREEN}║                                                                      ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
@@ -454,7 +456,11 @@ read -p "请选择 [1/2]: " START_CHOICE
 if [[ "$START_CHOICE" == "1" ]]; then
     echo ""
     echo "正在启动..."
-    "$PYTHON_CMD" -m desktop_client &
+    if [[ "$OS" == "macos" ]]; then
+        /usr/bin/open -n "$APP_BUNDLE"
+    else
+        "$PYTHON_CMD" -m desktop_client &
+    fi
     echo -e "${GREEN}✓ 应用已启动${NC}"
 fi
 
