@@ -8,6 +8,33 @@ import os
 import logging
 
 # ============================================================
+# Qt / OpenGL 运行时设置（必须在 QApplication 创建前）
+# ============================================================
+os.environ.setdefault("QT_OPENGL", "desktop")
+
+try:
+    from PySide6.QtCore import Qt  # type: ignore[import-not-found]
+    from PySide6.QtGui import QSurfaceFormat  # type: ignore[import-not-found]
+    from PySide6.QtWidgets import QApplication  # type: ignore[import-not-found]
+
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseDesktopOpenGL, True)
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
+
+    fmt = QSurfaceFormat()
+    fmt.setRenderableType(QSurfaceFormat.RenderableType.OpenGL)
+    fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CompatibilityProfile)
+    fmt.setVersion(2, 1)
+    fmt.setSwapBehavior(QSurfaceFormat.SwapBehavior.DoubleBuffer)
+    fmt.setAlphaBufferSize(8)
+    fmt.setDepthBufferSize(24)
+    fmt.setStencilBufferSize(8)
+    fmt.setSamples(4)
+    QSurfaceFormat.setDefaultFormat(fmt)
+except Exception:
+    # 不阻塞启动，交给后续实际运行时兜底。
+    pass
+
+# ============================================================
 # 添加路径（必须在最开始）
 # ============================================================
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -19,28 +46,29 @@ if parent_dir not in sys.path:
 # 依赖检查与自动安装（在导入其他模块之前）
 # ============================================================
 # 注意：dependency_checker 只使用标准库，不依赖第三方包
-try:
-    from desktop_client.dependency_checker import check_and_install_dependencies
+if not getattr(sys, "frozen", False):
+    try:
+        from desktop_client.dependency_checker import check_and_install_dependencies
 
-    success, message = check_and_install_dependencies(
-        auto_install=True,
-        show_gui=True,
-    )
+        success, message = check_and_install_dependencies(
+            auto_install=True,
+            show_gui=True,
+        )
 
-    if not success:
-        print(f"\n错误: {message}")
-        print("请手动安装依赖: pip install -r requirements.txt")
-        input("按回车键退出...")
-        sys.exit(1)
-    elif "安装" in message and "成功" in message:
-        print(f"\n{message}")
-        print("依赖已安装，正在启动应用...\n")
-except ImportError as e:
-    # dependency_checker 模块本身导入失败，继续尝试启动
-    print(f"警告: 依赖检查模块加载失败: {e}")
-except Exception as e:
-    # 其他错误，记录但不阻止启动
-    print(f"警告: 依赖检查过程出错: {e}")
+        if not success:
+            print(f"\n错误: {message}")
+            print("请手动安装依赖: pip install -r requirements.txt")
+            input("按回车键退出...")
+            sys.exit(1)
+        elif "安装" in message and "成功" in message:
+            print(f"\n{message}")
+            print("依赖已安装，正在启动应用...\n")
+    except ImportError as e:
+        # dependency_checker 模块本身导入失败，继续尝试启动
+        print(f"警告: 依赖检查模块加载失败: {e}")
+    except Exception as e:
+        # 其他错误，记录但不阻止启动
+        print(f"警告: 依赖检查过程出错: {e}")
 
 # ============================================================
 # 配置日志系统

@@ -95,7 +95,7 @@ class ScreenshotHandler(QObject):
             from ..services.screen_capture import ScreenCaptureService
 
             # 使用配置的存储路径
-            save_dir = self._config.storage.image_save_path or "./temp/screenshots"
+            save_dir = str(self._config.storage.resolved_image_save_path)
             service = ScreenCaptureService(save_dir=save_dir)
             screenshot_path = service.capture_full_screen_to_file()
 
@@ -122,7 +122,7 @@ class ScreenshotHandler(QObject):
             from ..services.screen_capture import ScreenCaptureService
 
             # 使用配置的存储路径
-            save_dir = self._config.storage.image_save_path or "./temp/screenshots"
+            save_dir = str(self._config.storage.resolved_image_save_path)
             service = ScreenCaptureService(save_dir=save_dir)
             screenshot_path = service.capture_full_screen_to_file()
 

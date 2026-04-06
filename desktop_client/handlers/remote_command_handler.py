@@ -6,6 +6,7 @@
 
 import base64
 import logging
+import sys
 import time
 from typing import TYPE_CHECKING, Optional, Dict, Any, Callable
 
@@ -154,17 +155,30 @@ class RemoteCommandHandler(QObject):
                 self._floating_ball._prepare_for_capture()
 
             # 执行截图
-            save_dir = self._config.storage.image_save_path or "./temp/screenshots"
+            save_dir = str(self._config.storage.resolved_image_save_path)
             service = ScreenCaptureService(save_dir=save_dir)
+            monitors = service.get_monitors_info()
+            capture_all_monitors = len(monitors) <= 1
 
-            if screenshot_type == "full":
+            if screenshot_type == "full" and not capture_all_monitors and sys.platform != "darwin":
+                logger.info(
+                    "检测到多显示器环境，远程截图改为抓取主显示器，避免返回拼接后的虚拟桌面"
+                )
+                image = service.capture_monitor(1)
+            elif screenshot_type == "full":
                 image = service.capture_full_screen()
             else:
                 # 区域截图暂不支持远程触发（需要用户交互）
-                image = service.capture_full_screen()
+                image = (
+                    service.capture_monitor(1)
+                    if not capture_all_monitors and sys.platform != "darwin"
+                    else service.capture_full_screen()
+                )
 
             if image is None:
-                return {"success": False, "error_message": "截图失败：无法捕获屏幕"}
+                error_message = service.get_last_error() or "截图失败：无法捕获屏幕"
+                logger.warning(f"远程截图失败: {error_message}")
+                return {"success": False, "error_message": error_message}
 
             # 将图片转换为 base64
             image_bytes = service.capture_to_bytes(image)

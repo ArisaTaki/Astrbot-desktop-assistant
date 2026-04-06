@@ -16,6 +16,8 @@ Live2D 角色窗口
 from typing import Optional
 import os
 import sys
+import logging
+from pathlib import Path
 
 import OpenGL.GL as gl  # type: ignore[import-untyped]
 import live2d.v3 as live2d  # type: ignore[import-untyped]
@@ -52,6 +54,8 @@ from .themes import theme_manager, Theme
 from .icons import icon_manager
 from ..services.screen_capture import ScreenCaptureService
 
+logger = logging.getLogger(__name__)
+
 
 class Live2DCharacterWindow(QOpenGLWidget):
     """Live2D 角色窗口 — 与 FloatingBallWindow 接口兼容"""
@@ -85,6 +89,7 @@ class Live2DCharacterWindow(QOpenGLWidget):
             | Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Window
         )
+        self._use_translucent_window = True
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.resize(self._win_width, self._win_height)
 
@@ -95,12 +100,15 @@ class Live2DCharacterWindow(QOpenGLWidget):
         # 模型
         self._model: Optional[live2d.LAppModel] = None
         self._gl_initialized = False
+        self._render_ready = False
 
         # 拖拽状态
         self._dragging = False
         self._click_x = -1.0
         self._click_y = -1.0
         self._click_in_l2d_area = False
+        self._drag_start_global = QPoint()
+        self._drag_start_window_pos = QPoint()
 
         # 双击检测
         self._click_timer = QTimer()
@@ -122,6 +130,7 @@ class Live2DCharacterWindow(QOpenGLWidget):
         self._mouse_passthrough = False
         self._ns_window_ref = None
         self._cursor_on_model = False  # paintGL 中缓存的命中检测
+        self._disable_native_mouse_passthrough = False
 
         # 精简版对话窗口（与 FloatingBallWindow 相同）
         self._compact_window = CompactChatWindow(config=self.config)
@@ -152,35 +161,103 @@ class Live2DCharacterWindow(QOpenGLWidget):
     # ==================== OpenGL 生命周期 ====================
 
     def initializeGL(self) -> None:
-        live2d.glInit()
-        self._model = live2d.LAppModel()
-        self._model.LoadModelJson(self._model_path)
-        self._gl_initialized = True
+        model_path = Path(self._model_path).expanduser().resolve()
+        model_dir = model_path.parent
+        prev_cwd = Path.cwd()
+        logger.debug(
+            "Live2D initializeGL 开始: model=%s cwd=%s model_dir=%s",
+            model_path,
+            prev_cwd,
+            model_dir,
+        )
+        try:
+            live2d.glInit()
+            self._model = live2d.LAppModel()
+            os.chdir(model_dir)
+            self._model.LoadModelJson(str(model_path))
+            self._gl_initialized = True
 
-        # 应用缩放
-        scale = 1.0
-        if hasattr(self.config, "appearance"):
-            scale = getattr(self.config.appearance, "live2d_scale", 1.0) or 1.0
-        if scale != 1.0 and hasattr(self._model, "SetScale"):
-            self._model.SetScale(scale)
+            # 应用缩放
+            scale = 1.0
+            if hasattr(self.config, "appearance"):
+                scale = getattr(self.config.appearance, "live2d_scale", 1.0) or 1.0
+            if scale != 1.0 and hasattr(self._model, "SetScale"):
+                self._model.SetScale(scale)
 
-        # 以约 60fps 进行渲染
-        self.startTimer(int(1000 / 60))
+            self._render_ready = True
+            logger.debug(
+                "Live2D initializeGL 成功: scale=%s size=%sx%s",
+                scale,
+                self.width(),
+                self.height(),
+            )
+
+            # 以约 60fps 进行渲染
+            self.startTimer(int(1000 / 60))
+        except Exception:
+            self._render_ready = False
+            logger.exception("Live2D initializeGL 失败")
+            raise
+        finally:
+            try:
+                os.chdir(prev_cwd)
+            except Exception:
+                logger.warning("恢复工作目录失败: %s", prev_cwd)
 
     def resizeGL(self, w: int, h: int) -> None:
         if self._model:
             self._model.Resize(w, h)
 
     def paintGL(self) -> None:
-        live2d.clearBuffer()
-        if self._model:
-            self._model.Update()
-            # 在 Update 之后、Draw 之前设置表情参数（覆盖动画默认值）
-            self._apply_expression_for_state()
-            self._model.Draw()
+        try:
+            live2d.clearBuffer()
+            if self._model:
+                self._model.Update()
+                # 在 Update 之后、Draw 之前设置表情参数（覆盖动画默认值）
+                self._apply_expression_for_state()
+                self._model.Draw()
+        except Exception:
+            self._render_ready = False
+            logger.exception("Live2D paintGL 失败")
+            raise
 
         # 在 GL 上下文有效时缓存鼠标命中检测结果
         self._cache_cursor_hit()
+
+    def _is_point_on_model(self, lx: float, ly: float) -> bool:
+        """基于当前 framebuffer 做像素级命中检测。"""
+        if not (0 <= lx < self.width() and 0 <= ly < self.height()):
+            return False
+        try:
+            image = self.grabFramebuffer()
+            if image.isNull():
+                return False
+
+            image_w = image.width()
+            image_h = image.height()
+            if image_w <= 0 or image_h <= 0:
+                return False
+
+            fx = int((lx / max(1, self.width())) * image_w)
+            fy = int((ly / max(1, self.height())) * image_h)
+
+            hit = False
+            for ox in (-1, 0, 1):
+                for oy in (-1, 0, 1):
+                    sx = max(0, min(image_w - 1, fx + ox))
+                    sy = max(0, min(image_h - 1, fy + oy))
+                    color = image.pixelColor(sx, sy)
+                    if color.alpha() > 0 or (
+                        color.red() + color.green() + color.blue()
+                    ) > 12:
+                        hit = True
+                        break
+                if hit:
+                    break
+            return hit
+        except Exception:
+            logger.exception("Live2D framebuffer 命中检测失败")
+            return False
 
     def _cache_cursor_hit(self):
         """paintGL 中缓存当前光标是否在模型不透明区域上"""
@@ -188,16 +265,7 @@ class Live2DCharacterWindow(QOpenGLWidget):
             cursor = QCursor.pos()
             lx = cursor.x() - self.x()
             ly = cursor.y() - self.y()
-            if 0 <= lx < self.width() and 0 <= ly < self.height():
-                h = self.height()
-                data = gl.glReadPixels(
-                    int(lx * self._system_scale),
-                    int((h - ly) * self._system_scale),
-                    1, 1, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE
-                )
-                self._cursor_on_model = data[3] > 0  # type: ignore[index]
-            else:
-                self._cursor_on_model = False
+            self._cursor_on_model = self._is_point_on_model(lx, ly)
         except Exception:
             self._cursor_on_model = False
 
@@ -221,18 +289,44 @@ class Live2DCharacterWindow(QOpenGLWidget):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         x, y = event.scenePosition().x(), event.scenePosition().y()
+        self._cursor_on_model = self._is_point_on_model(x, y)
+        logger.debug(
+            "Live2D mousePress: button=%s pos=(%.1f,%.1f) cursor_on_model=%s dragging=%s",
+            event.button(),
+            x,
+            y,
+            self._cursor_on_model,
+            self._dragging,
+        )
         if event.button() == Qt.MouseButton.LeftButton:
             if self._cursor_on_model:
                 self._click_in_l2d_area = True
                 self._click_x, self._click_y = x, y
                 self._dragging = False
+                self._drag_start_global = event.globalPosition().toPoint()
+                self._drag_start_window_pos = self.pos()
+                self._update_mouse_passthrough(False)
+                self.grabMouse()
+                logger.debug(
+                    "Live2D drag start: global=%s window_pos=%s",
+                    self._drag_start_global,
+                    self._drag_start_window_pos,
+                )
             event.accept()
         elif event.button() == Qt.MouseButton.RightButton:
             if self._cursor_on_model:
+                self._update_mouse_passthrough(False)
                 self._show_context_menu(event.globalPosition().toPoint())
             event.accept()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        logger.debug(
+            "Live2D mouseRelease: button=%s cursor_on_model=%s dragging=%s click_in_area=%s",
+            event.button(),
+            self._cursor_on_model,
+            self._dragging,
+            self._click_in_l2d_area,
+        )
         if event.button() == Qt.MouseButton.LeftButton and self._click_in_l2d_area:
             self._click_in_l2d_area = False
             if not self._dragging:
@@ -250,17 +344,32 @@ class Live2DCharacterWindow(QOpenGLWidget):
                 if self._model:
                     self._model.StartRandomMotion(priority=3)
             self._dragging = False
+            self.releaseMouse()
+            self._update_mouse_passthrough(not self._cursor_on_model)
+            event.accept()
+        elif event.button() == Qt.MouseButton.RightButton:
+            self._update_mouse_passthrough(not self._cursor_on_model)
             event.accept()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        x, y = event.scenePosition().x(), event.scenePosition().y()
         if self._click_in_l2d_area:
-            dx = x - self._click_x
-            dy = y - self._click_y
+            current_global = event.globalPosition().toPoint()
+            dx = current_global.x() - self._drag_start_global.x()
+            dy = current_global.y() - self._drag_start_global.y()
+            logger.debug(
+                "Live2D mouseMove: global=%s delta=(%s,%s) dragging=%s",
+                current_global,
+                dx,
+                dy,
+                self._dragging,
+            )
             if abs(dx) > 3 or abs(dy) > 3:
                 self._dragging = True
             if self._dragging:
-                self.move(int(self.x() + dx), int(self.y() + dy))
+                self.move(
+                    self._drag_start_window_pos.x() + dx,
+                    self._drag_start_window_pos.y() + dy,
+                )
             event.accept()
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
@@ -573,6 +682,10 @@ class Live2DCharacterWindow(QOpenGLWidget):
 
     def _update_mouse_passthrough(self, passthrough: bool):
         """动态切换鼠标事件穿透（仅在状态变化时操作）"""
+        if self._disable_native_mouse_passthrough:
+            self._mouse_passthrough = False
+            return
+
         if passthrough == self._mouse_passthrough:
             return
         self._mouse_passthrough = passthrough
@@ -745,9 +858,17 @@ class Live2DCharacterWindow(QOpenGLWidget):
         screen = QGuiApplication.primaryScreen()
         if screen:
             geo = screen.availableGeometry()
-            x = geo.right() - self._win_width - 50
-            y = geo.bottom() - self._win_height - 50
+            x = max(geo.left(), geo.right() - self._win_width - 50)
+            y = max(geo.top(), geo.bottom() - self._win_height - 50)
             self.move(x, y)
+            logger.debug(
+                "Live2D 默认定位: pos=(%s,%s) size=%sx%s screen=%s",
+                x,
+                y,
+                self._win_width,
+                self._win_height,
+                geo,
+            )
 
     def _on_theme_changed(self, theme: Theme):
         pass
@@ -756,15 +877,74 @@ class Live2DCharacterWindow(QOpenGLWidget):
         super().showEvent(event)
         if sys.platform == "darwin":
             QTimer.singleShot(50, self._setup_macos_window)
+        QTimer.singleShot(120, self._ensure_visible_state)
+        QTimer.singleShot(1200, self._log_render_state)
 
     def _setup_macos_window(self):
         """macOS: 设置窗口层级 + 初始鼠标穿透"""
         _set_macos_window_level(self)
         # 默认穿透（timerEvent 会在光标移到模型上时切回来）
         ns_win = self._get_ns_window()
-        if ns_win:
+        if ns_win and not self._disable_native_mouse_passthrough:
             ns_win.setIgnoresMouseEvents_(True)
             self._mouse_passthrough = True
+        else:
+            self._mouse_passthrough = False
+        logger.debug("Live2D macOS 窗口设置完成: visible=%s pos=%s", self.isVisible(), self.pos())
+
+    def _ensure_visible_state(self):
+        """确保窗口真正出现在当前屏幕可见区域内。"""
+        screen = QGuiApplication.screenAt(self.pos()) or QGuiApplication.primaryScreen()
+        if screen is None:
+            logger.warning("Live2D 可见性校验失败: 未找到屏幕")
+            return
+
+        geo = screen.availableGeometry()
+        frame = self.frameGeometry()
+        if not geo.intersects(frame):
+            x = max(geo.left(), geo.right() - self.width() - 50)
+            y = max(geo.top(), geo.bottom() - self.height() - 50)
+            self.move(x, y)
+            logger.warning(
+                "Live2D 窗口原位置超出屏幕，已重置: old=%s new=(%s,%s) screen=%s",
+                frame,
+                x,
+                y,
+                geo,
+            )
+
+        if self.windowOpacity() < 0.99:
+            self.setWindowOpacity(1.0)
+
+        if not self.isVisible():
+            self.show()
+
+        self.raise_()
+        self.update()
+        self.repaint()
+
+        if sys.platform == "darwin":
+            _set_macos_window_level(self)
+
+        logger.debug(
+            "Live2D 可见性校验完成: pos=%s frame=%s visible=%s opacity=%.2f render_ready=%s",
+            self.pos(),
+            self.frameGeometry(),
+            self.isVisible(),
+            self.windowOpacity(),
+            self._render_ready,
+        )
+
+    def _log_render_state(self):
+        logger.debug(
+            "Live2D 渲染状态: gl_initialized=%s render_ready=%s visible=%s size=%sx%s pos=%s",
+            self._gl_initialized,
+            self._render_ready,
+            self.isVisible(),
+            self.width(),
+            self.height(),
+            self.pos(),
+        )
 
     def closeEvent(self, event):
         """释放 Live2D 资源"""

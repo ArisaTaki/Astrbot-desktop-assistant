@@ -304,7 +304,7 @@ if HAS_PYSIDE6:
     class RegionScreenshotCapture:
         """区域截图捕获工具类"""
 
-        def __init__(self, save_dir: str = "./temp/screenshots"):
+        def __init__(self, save_dir: str = ""):
             """
             初始化区域截图工具
 
@@ -312,6 +312,11 @@ if HAS_PYSIDE6:
                 save_dir: 截图保存目录
             """
             import os
+
+            if not save_dir:
+                from ..config import ClientConfig
+
+                save_dir = str(ClientConfig.get_config_dir() / "screenshots")
 
             self.save_dir = save_dir
             os.makedirs(save_dir, exist_ok=True)

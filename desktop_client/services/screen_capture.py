@@ -5,6 +5,10 @@
 """
 
 import os
+import logging
+import subprocess
+import sys
+import tempfile
 import time
 from typing import Optional, Tuple, Callable
 from io import BytesIO
@@ -24,6 +28,13 @@ try:
 except ImportError:
     HAS_PIL = False
 
+try:
+    import Quartz
+
+    HAS_QUARTZ = True
+except ImportError:
+    HAS_QUARTZ = False
+
 
 class ScreenCaptureService:
     """屏幕捕获服务"""
@@ -36,12 +47,54 @@ class ScreenCaptureService:
             save_dir: 截图保存目录
         """
         self.save_dir = save_dir
+        self.last_error_message = ""
+        self._logger = logging.getLogger(__name__)
         os.makedirs(save_dir, exist_ok=True)
 
         if not HAS_MSS:
-            print("警告: mss 库未安装，截图功能不可用")
+            self._logger.warning("mss 库未安装，截图功能不可用")
         if not HAS_PIL:
-            print("警告: Pillow 库未安装，截图功能不可用")
+            self._logger.warning("Pillow 库未安装，截图功能不可用")
+
+    def get_last_error(self) -> str:
+        return self.last_error_message
+
+    def _set_last_error(self, message: str) -> None:
+        self.last_error_message = message
+
+    def _check_macos_screen_capture_access(
+        self, request_if_needed: bool = False
+    ) -> bool:
+        if sys.platform != "darwin" or not HAS_QUARTZ:
+            return True
+
+        try:
+            access_granted = Quartz.CGPreflightScreenCaptureAccess()
+            self._logger.debug(
+                "macOS 屏幕录制权限预检查: granted=%s", access_granted
+            )
+            if access_granted:
+                return True
+
+            if request_if_needed and hasattr(Quartz, "CGRequestScreenCaptureAccess"):
+                try:
+                    self._logger.info("尝试请求 macOS 屏幕录制权限")
+                    Quartz.CGRequestScreenCaptureAccess()
+                except Exception as e:
+                    self._logger.warning("请求 macOS 屏幕录制权限失败: %s", e)
+                access_granted = bool(Quartz.CGPreflightScreenCaptureAccess())
+                self._logger.debug(
+                    "macOS 屏幕录制权限复检: granted=%s", access_granted
+                )
+                if access_granted:
+                    return True
+        except Exception as e:
+            self._logger.warning("检测 macOS 屏幕录制权限失败: %s", e)
+
+        self._set_last_error(
+            "截图失败：macOS 未授予屏幕录制权限。请在“系统设置 > 隐私与安全性 > 屏幕录制”中允许 AstrBot Desktop Assistant 后重试。"
+        )
+        return False
 
     def capture_full_screen(self) -> Optional[Image.Image]:
         """
@@ -50,10 +103,21 @@ class ScreenCaptureService:
         Returns:
             PIL Image 对象，失败返回 None
         """
-        if not HAS_MSS or not HAS_PIL:
+        self._set_last_error("")
+        if not HAS_PIL:
+            self._set_last_error("截图失败：Pillow 未安装")
             return None
 
         try:
+            if sys.platform == "darwin":
+                self._logger.debug("macOS 全屏截图开始")
+                if not self._check_macos_screen_capture_access(request_if_needed=True):
+                    return None
+                return self._capture_full_screen_macos()
+
+            if not HAS_MSS:
+                self._set_last_error("截图失败：mss 未安装")
+                return None
             with mss.mss() as sct:
                 # 获取所有显示器的组合
                 monitor = sct.monitors[0]  # 0 是所有显示器的组合
@@ -62,7 +126,8 @@ class ScreenCaptureService:
                     "RGB", screenshot.size, screenshot.bgra, "raw", "BGRX"
                 )
         except Exception as e:
-            print(f"全屏截图失败: {e}")
+            self._set_last_error(f"全屏截图失败: {e}")
+            self._logger.exception("全屏截图失败")
             return None
 
     def capture_monitor(self, monitor_index: int = 1) -> Optional[Image.Image]:
@@ -75,13 +140,24 @@ class ScreenCaptureService:
         Returns:
             PIL Image 对象，失败返回 None
         """
-        if not HAS_MSS or not HAS_PIL:
+        self._set_last_error("")
+        if not HAS_PIL:
+            self._set_last_error("截图失败：Pillow 未安装")
             return None
 
         try:
+            if sys.platform == "darwin":
+                # macOS 上优先走系统 screencapture，mss 常出现只抓到桌面层的问题。
+                self._logger.debug("macOS 指定显示器截图退化为全屏截图")
+                return self.capture_full_screen()
+
+            if not HAS_MSS:
+                self._set_last_error("截图失败：mss 未安装")
+                return None
             with mss.mss() as sct:
                 if monitor_index < 1 or monitor_index >= len(sct.monitors):
-                    print(f"显示器索引 {monitor_index} 无效")
+                    self._set_last_error(f"截图失败：显示器索引 {monitor_index} 无效")
+                    self._logger.warning("显示器索引无效: %s", monitor_index)
                     return None
                 monitor = sct.monitors[monitor_index]
                 screenshot = sct.grab(monitor)
@@ -89,8 +165,65 @@ class ScreenCaptureService:
                     "RGB", screenshot.size, screenshot.bgra, "raw", "BGRX"
                 )
         except Exception as e:
-            print(f"显示器截图失败: {e}")
+            self._set_last_error(f"显示器截图失败: {e}")
+            self._logger.exception("显示器截图失败")
             return None
+
+    def _capture_full_screen_macos(self) -> Optional[Image.Image]:
+        """使用 macOS 原生 screencapture 抓取当前屏幕内容。"""
+        fd, temp_path = tempfile.mkstemp(prefix="astrbot_capture_", suffix=".png")
+        os.close(fd)
+        self._logger.debug("准备调用 screencapture: temp_path=%s", temp_path)
+
+        try:
+            result = subprocess.run(
+                ["screencapture", "-x", temp_path],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            file_exists = os.path.exists(temp_path)
+            file_size = os.path.getsize(temp_path) if file_exists else 0
+            self._logger.debug(
+                "screencapture 返回: code=%s stderr=%r file_exists=%s file_size=%s",
+                result.returncode,
+                result.stderr.strip(),
+                file_exists,
+                file_size,
+            )
+            if result.returncode != 0:
+                error_text = result.stderr.strip() or "未知错误"
+                if "could not create image from display" in error_text.lower():
+                    self._set_last_error(
+                        "截图失败：macOS 当前无法访问屏幕内容。请确认 AstrBot Desktop Assistant 已获得“屏幕录制”权限，并在授权后重启客户端。"
+                    )
+                else:
+                    self._set_last_error(f"macOS screencapture 失败: {error_text}")
+                self._logger.warning("macOS screencapture 失败: %s", error_text)
+                return None
+
+            if not file_exists or file_size <= 0:
+                self._set_last_error("截图失败：screencapture 未生成有效图片文件")
+                self._logger.warning("screencapture 未生成有效图片文件: %s", temp_path)
+                return None
+
+            with Image.open(temp_path) as img:
+                self._logger.debug(
+                    "screencapture 打开成功: format=%s size=%sx%s",
+                    img.format,
+                    img.width,
+                    img.height,
+                )
+                return img.convert("RGB")
+        except Exception as e:
+            self._set_last_error(f"macOS 全屏截图失败: {e}")
+            self._logger.exception("macOS 全屏截图失败")
+            return None
+        finally:
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
 
     def capture_region(
         self, left: int, top: int, width: int, height: int
@@ -107,7 +240,9 @@ class ScreenCaptureService:
         Returns:
             PIL Image 对象，失败返回 None
         """
+        self._set_last_error("")
         if not HAS_MSS or not HAS_PIL:
+            self._set_last_error("截图失败：区域截图依赖未安装")
             return None
 
         try:
@@ -118,7 +253,8 @@ class ScreenCaptureService:
                     "RGB", screenshot.size, screenshot.bgra, "raw", "BGRX"
                 )
         except Exception as e:
-            print(f"区域截图失败: {e}")
+            self._set_last_error(f"区域截图失败: {e}")
+            self._logger.exception("区域截图失败")
             return None
 
     def capture_full_screen_to_file(
@@ -146,7 +282,7 @@ class ScreenCaptureService:
             image.save(filepath, "PNG")
             return filepath
         except Exception as e:
-            print(f"保存截图失败: {e}")
+            self._logger.exception("保存截图失败")
             return None
 
     def capture_to_bytes(self, image: Optional[Image.Image] = None) -> Optional[bytes]:
@@ -169,7 +305,7 @@ class ScreenCaptureService:
             image.save(buffer, format="PNG")
             return buffer.getvalue()
         except Exception as e:
-            print(f"转换截图失败: {e}")
+            self._logger.exception("转换截图失败")
             return None
 
     def get_screen_size(self) -> Tuple[int, int]:

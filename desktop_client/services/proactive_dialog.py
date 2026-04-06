@@ -66,7 +66,7 @@ class ProactiveDialogService(QObject):
     def __init__(
         self,
         config: Optional[ProactiveDialogConfig] = None,
-        screenshot_dir: str = "./temp/screenshots",
+        screenshot_dir: str = "",
         parent: Optional[QObject] = None,
     ):
         """
@@ -80,6 +80,11 @@ class ProactiveDialogService(QObject):
         super().__init__(parent)
 
         self._config = config or ProactiveDialogConfig()
+        if not screenshot_dir:
+            from ..config import ClientConfig
+
+            screenshot_dir = str(ClientConfig.get_config_dir() / "screenshots")
+
         self._screenshot_dir = screenshot_dir
         self._is_running = False
 

@@ -269,8 +269,8 @@ class StorageConfig:
             except Exception as e:
                 print(f"无法创建自定义存储目录: {e}")
 
-        # 默认路径: ./temp/images
-        default_path = Path("temp") / "images"
+        # 默认路径: 配置目录下的 screenshots
+        default_path = _get_config_dir_internal() / "screenshots"
         default_path.mkdir(parents=True, exist_ok=True)
         return default_path
 
