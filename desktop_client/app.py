@@ -552,6 +552,8 @@ class DesktopClientApp(QObject):
         # 初始化聊天记录管理器
         chat_history_path = self.config.storage.chat_history_path
         chat_history_manager = get_chat_history_manager(chat_history_path)
+        if self.config.session_id:
+            chat_history_manager.set_current_session(self.config.session_id)
         self._message_handler.set_chat_history_manager(chat_history_manager)
         self._media_handler.set_chat_history_manager(chat_history_manager)
         self._settings_controller.set_chat_history_manager(chat_history_manager)

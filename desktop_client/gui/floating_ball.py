@@ -878,6 +878,11 @@ class CompactChatWindow(QWidget):
 
     def _display_message_from_history(self, msg: ChatMessage):
         """从历史记录中显示消息（不会再次添加到历史记录）"""
+        current_session = self._chat_history.get_current_session()
+        message_session = msg.metadata.get("session_id", current_session)
+        if message_session != current_session:
+            return
+
         if msg.id in self._displayed_message_ids:
             return  # 已经显示过了
 
@@ -1285,6 +1290,11 @@ class CompactChatWindow(QWidget):
 
     def _on_history_message_added(self, msg: ChatMessage):
         """处理历史记录管理器发出的消息添加信号"""
+        current_session = self._chat_history.get_current_session()
+        message_session = msg.metadata.get("session_id", current_session)
+        if message_session != current_session:
+            return
+
         if msg.id in self._displayed_message_ids:
             return
 

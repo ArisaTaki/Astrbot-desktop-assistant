@@ -82,6 +82,10 @@ class MessageHandler(QObject):
         """
         msg_type = message.msg_type
         content = message.content
+        session_id = message.session_id or None
+
+        if session_id and self._chat_history_manager:
+            self._chat_history_manager.set_current_session(session_id)
 
         # 检查是否是主动对话的响应
         is_proactive_response = self._proactive_dialog_pending
@@ -104,6 +108,7 @@ class MessageHandler(QObject):
                 is_proactive_response,
                 should_silent,
                 do_not_disturb,
+                session_id,
             )
 
         elif msg_type == "image":
@@ -162,6 +167,7 @@ class MessageHandler(QObject):
         is_proactive_response: bool,
         should_silent: bool,
         do_not_disturb: bool,
+        session_id: Optional[str],
     ) -> None:
         """处理文本消息"""
         # 忽略空消息
@@ -181,7 +187,10 @@ class MessageHandler(QObject):
                 # 非流式完整响应：静默添加到历史记录，不显示气泡
                 if self._chat_history_manager:
                     self._chat_history_manager.add_message(
-                        role="assistant", content=content, msg_type="text"
+                        role="assistant",
+                        content=content,
+                        msg_type="text",
+                        session_id=session_id,
                     )
                 # 仅设置未读消息标记（显示动画效果）
                 if self._floating_ball:
@@ -211,7 +220,10 @@ class MessageHandler(QObject):
                     if do_not_disturb:
                         if self._chat_history_manager:
                             self._chat_history_manager.add_message(
-                                role="assistant", content=content, msg_type="text"
+                                role="assistant",
+                                content=content,
+                                msg_type="text",
+                                session_id=session_id,
                             )
                         self._floating_ball.set_unread_message(True)
                     else:
@@ -224,7 +236,10 @@ class MessageHandler(QObject):
                 # 没有 UI 实例，直接写入历史
                 if self._chat_history_manager:
                     self._chat_history_manager.add_message(
-                        role="assistant", content=content, msg_type="text"
+                        role="assistant",
+                        content=content,
+                        msg_type="text",
+                        session_id=session_id,
                     )
 
     def _handle_end_message(
@@ -237,7 +252,10 @@ class MessageHandler(QObject):
             buffer = self._silent_response_buffer
             if buffer and self._chat_history_manager:
                 self._chat_history_manager.add_message(
-                    role="assistant", content=buffer, msg_type="text"
+                    role="assistant",
+                    content=buffer,
+                    msg_type="text",
+                    session_id=self._chat_history_manager.get_current_session(),
                 )
                 # 仅设置未读消息标记（显示动画效果）
                 if self._floating_ball:
