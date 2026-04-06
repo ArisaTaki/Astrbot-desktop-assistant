@@ -14,7 +14,6 @@ Live2D 角色窗口
 """
 
 from typing import Optional
-import math
 import os
 import sys
 
@@ -32,8 +31,6 @@ from PySide6.QtGui import (  # type: ignore[import-not-found]
     QMouseEvent,
     QCursor,
     QGuiApplication,
-    QPainter,
-    QColor,
 )
 from PySide6.QtWidgets import (  # type: ignore[import-not-found]
     QMenu,
@@ -45,6 +42,7 @@ from .floating_ball import (
     FloatingBallState,
     CompactChatWindow,
     _set_macos_window_level,
+    _HAS_PYOBJC,
     _NSNormalWindowLevel,
     _CAPTURE_SETTLE_MS,
     _CAPTURE_RESTORE_SETTLE_MS,
@@ -102,7 +100,6 @@ class Live2DCharacterWindow(QOpenGLWidget):
         self._dragging = False
         self._click_x = -1.0
         self._click_y = -1.0
-        self._is_in_l2d_area = False
         self._click_in_l2d_area = False
 
         # 双击检测
@@ -116,17 +113,20 @@ class Live2DCharacterWindow(QOpenGLWidget):
         self._capture_prepared = False
         self._capture_prepare_depth = 0
 
-        # 呼吸灯 / 未读指示器
+        # 呼吸灯 / 未读指示器（仅用于兼容接口，实际状态通过 L2D 表情表达）
         self._breathing = True
         self._breath_phase = 0.0
         self._pulse_phase = 0.0
-        self._indicator_timer = QTimer(self)
-        self._indicator_timer.setInterval(50)
-        self._indicator_timer.timeout.connect(self._update_indicator)
-        self._indicator_timer.start()
+
+        # macOS 鼠标穿透状态
+        self._mouse_passthrough = False
+        self._ns_window_ref = None
+        self._cursor_on_model = False  # paintGL 中缓存的命中检测
 
         # 精简版对话窗口（与 FloatingBallWindow 相同）
         self._compact_window = CompactChatWindow(config=self.config)
+        # L2D 模式下加大对话窗口
+        self._compact_window.resize(460, 580)
         self._compact_window.message_sent.connect(self.message_sent)
         self._compact_window.image_sent.connect(self.image_sent)
 
@@ -175,48 +175,61 @@ class Live2DCharacterWindow(QOpenGLWidget):
         live2d.clearBuffer()
         if self._model:
             self._model.Update()
+            # 在 Update 之后、Draw 之前设置表情参数（覆盖动画默认值）
+            self._apply_expression_for_state()
             self._model.Draw()
 
-        # 在 OpenGL 内容之上叠加绘制状态指示器
-        self._draw_status_indicator()
+        # 在 GL 上下文有效时缓存鼠标命中检测结果
+        self._cache_cursor_hit()
+
+    def _cache_cursor_hit(self):
+        """paintGL 中缓存当前光标是否在模型不透明区域上"""
+        try:
+            cursor = QCursor.pos()
+            lx = cursor.x() - self.x()
+            ly = cursor.y() - self.y()
+            if 0 <= lx < self.width() and 0 <= ly < self.height():
+                h = self.height()
+                data = gl.glReadPixels(
+                    int(lx * self._system_scale),
+                    int((h - ly) * self._system_scale),
+                    1, 1, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE
+                )
+                self._cursor_on_model = data[3] > 0  # type: ignore[index]
+            else:
+                self._cursor_on_model = False
+        except Exception:
+            self._cursor_on_model = False
 
     def timerEvent(self, event: QTimerEvent) -> None:
         if not self.isVisible():
             return
-        # 视线追踪：鼠标相对窗口中心
+        # 视线追踪
         if self._model:
             cursor = QCursor.pos()
             local_x = cursor.x() - self.x()
             local_y = cursor.y() - self.y()
-            self._is_in_l2d_area = self._check_l2d_area(local_x, local_y)
             self._model.Drag(local_x, local_y)
+
+            # 使用 paintGL 缓存的命中结果切换鼠标穿透（拖拽期间保持不穿透）
+            if not self._click_in_l2d_area:
+                self._update_mouse_passthrough(not self._cursor_on_model)
+
         self.update()
 
     # ==================== 鼠标事件 ====================
 
-    def _check_l2d_area(self, x: float, y: float) -> bool:
-        """通过读取 alpha 通道判断鼠标是否在模型区域内"""
-        try:
-            h = self.height()
-            data = gl.glReadPixels(
-                int(x * self._system_scale),
-                int((h - y) * self._system_scale),
-                1, 1, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE
-            )
-            return data[3] > 0  # type: ignore[index]
-        except Exception:
-            return False
-
     def mousePressEvent(self, event: QMouseEvent) -> None:
         x, y = event.scenePosition().x(), event.scenePosition().y()
         if event.button() == Qt.MouseButton.LeftButton:
-            if self._check_l2d_area(x, y):
+            if self._cursor_on_model:
                 self._click_in_l2d_area = True
                 self._click_x, self._click_y = x, y
                 self._dragging = False
             event.accept()
         elif event.button() == Qt.MouseButton.RightButton:
-            self._show_context_menu(event.globalPosition().toPoint())
+            if self._cursor_on_model:
+                self._show_context_menu(event.globalPosition().toPoint())
             event.accept()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
@@ -494,6 +507,7 @@ class Live2DCharacterWindow(QOpenGLWidget):
 
     def show_bubble(self, text: str, duration: int = 0):
         """显示气泡（实际显示在精简窗口中）"""
+        self._has_unread = False
         self._update_compact_window_position()
         self._compact_window.add_ai_message(text)
         self._compact_window.show()
@@ -511,87 +525,96 @@ class Live2DCharacterWindow(QOpenGLWidget):
 
     def show_input(self):
         """显示输入框"""
+        self._has_unread = False
         self._update_compact_window_position()
         self._compact_window.show()
         self._compact_window.activateWindow()
 
     def _update_compact_window_position(self):
-        """更新精简窗口位置"""
-        w = self._compact_window.width()
-        h = self._compact_window.height()
+        """将对话窗口放置在屏幕中央"""
+        screen = QGuiApplication.primaryScreen()
+        if screen:
+            geo = screen.availableGeometry()
+            w = self._compact_window.width()
+            h = self._compact_window.height()
+            x = geo.x() + (geo.width() - w) // 2
+            y = geo.y() + (geo.height() - h) // 2
+            self._compact_window.move(x, y)
 
-        # 默认显示在左侧
-        x = self.x() - w - 10
-        y = self.y() + (self.height() - h) // 2
+    # ==================== macOS 鼠标穿透 ====================
 
-        # 如果左侧空间不足，显示在右侧
-        if x < 0:
-            x = self.x() + self.width() + 10
+    def _get_ns_window(self):
+        """获取 NSWindow 引用（缓存）"""
+        if self._ns_window_ref is not None:
+            return self._ns_window_ref
+        if sys.platform != "darwin" or not _HAS_PYOBJC:
+            return None
+        try:
+            import objc  # type: ignore[import-untyped]
+            wid = int(self.winId())
+            # PySide6 winId() 在 macOS 上返回 NSView 指针
+            ns_view = objc.objc_object(c_void_p=wid)  # type: ignore[attr-defined]
+            if hasattr(ns_view, "window") and ns_view.window():
+                self._ns_window_ref = ns_view.window()
+                return self._ns_window_ref
+        except Exception:
+            pass
+        # 回退: 遍历 NSApp.windows
+        try:
+            from AppKit import NSApp  # type: ignore[import-untyped,attr-defined]
+            wid = int(self.winId())
+            for ns_win in NSApp.windows():
+                if ns_win.windowNumber() == wid:
+                    self._ns_window_ref = ns_win
+                    return ns_win
+        except Exception:
+            pass
+        return None
 
-        self._compact_window.move(x, y)
+    def _update_mouse_passthrough(self, passthrough: bool):
+        """动态切换鼠标事件穿透（仅在状态变化时操作）"""
+        if passthrough == self._mouse_passthrough:
+            return
+        self._mouse_passthrough = passthrough
 
-    # ==================== 状态指示器 ====================
+        if sys.platform == "darwin":
+            ns_win = self._get_ns_window()
+            if ns_win:
+                ns_win.setIgnoresMouseEvents_(passthrough)
+        else:
+            self.setAttribute(
+                Qt.WidgetAttribute.WA_TransparentForMouseEvents, passthrough
+            )
 
-    def _update_indicator(self):
-        """更新呼吸灯 / 未读红点动画相位"""
-        if self._has_unread:
-            self._pulse_phase += 0.12
-            if self._pulse_phase > 2 * math.pi:
-                self._pulse_phase -= 2 * math.pi
-        if self._breathing:
-            self._breath_phase += 0.04
-            if self._breath_phase > 2 * math.pi:
-                self._breath_phase -= 2 * math.pi
+    # ==================== Live2D 表情状态 ====================
 
-    def _draw_status_indicator(self):
-        """在 GL 内容之上绘制状态指示器（未读红点 / 呼吸灯）"""
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    def _apply_expression_for_state(self):
+        """根据当前状态设置 Live2D 表情参数"""
+        if not self._model:
+            return
 
-        # 指示器位置：右上角
-        cx = self.width() - 24
-        cy = 24
-
-        if self._has_unread:
-            # 未读消息 —— 红点 + 脉冲外发光
-            pulse_scale = 1.0 + 0.3 * math.sin(self._pulse_phase)
-            dot_r = int(8 * pulse_scale)
-
-            # 外发光
-            pulse_alpha = int(100 + 80 * math.sin(self._pulse_phase))
-            for i in range(4, 0, -1):
-                painter.setBrush(QColor(255, 80, 80, int(pulse_alpha * (1 - i / 5))))
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.drawEllipse(QPoint(cx, cy), dot_r + i * 2, dot_r + i * 2)
-
-            # 红点
-            painter.setBrush(QColor(255, 59, 48))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(QPoint(cx, cy), dot_r, dot_r)
-
-        elif self._breathing:
-            # 呼吸灯 —— 微弱绿色光点
-            breath_alpha = int(80 + 60 * math.sin(self._breath_phase))
-            breath_r = int(5 + 2 * math.sin(self._breath_phase))
-
-            # 柔和外发光
-            for i in range(3, 0, -1):
-                painter.setBrush(QColor(76, 217, 100, int(breath_alpha * (1 - i / 4))))
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.drawEllipse(QPoint(cx, cy), breath_r + i * 2, breath_r + i * 2)
-
-            # 主光点
-            painter.setBrush(QColor(76, 217, 100, breath_alpha + 40))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(QPoint(cx, cy), breath_r, breath_r)
-
-        painter.end()
+        if self._state == FloatingBallState.DISCONNECTED:
+            # 断连 → 眼泪 + 泪珠
+            self._model.SetParameterValue("ParamExpression_1", 1.0)  # 眼泪
+            self._model.SetParameterValue("ParamExpression_2", 1.0)  # 泪珠
+            self._model.SetParameterValue("ParamExpression_3", 0.0)  # 关闭笑眯眯
+        elif self._has_unread:
+            # 未读消息 → 笑眯眯（期待互动）
+            self._model.SetParameterValue("ParamExpression_1", 0.0)
+            self._model.SetParameterValue("ParamExpression_2", 0.0)
+            self._model.SetParameterValue("ParamExpression_3", 1.0)  # 笑眯眯
+        else:
+            # 正常状态 → 重置表情
+            self._model.SetParameterValue("ParamExpression_1", 0.0)
+            self._model.SetParameterValue("ParamExpression_2", 0.0)
+            self._model.SetParameterValue("ParamExpression_3", 0.0)
 
     # ==================== 代理方法（与 FloatingBallWindow 兼容） ====================
 
     def set_state(self, state: FloatingBallState):
         """设置状态"""
         self._state = state
+        self._apply_expression_for_state()
 
     def is_waiting_response(self) -> bool:
         return self._compact_window._is_waiting
@@ -611,6 +634,7 @@ class Live2DCharacterWindow(QOpenGLWidget):
 
     def set_unread_message(self, has_unread: bool = True):
         self._has_unread = has_unread
+        self._apply_expression_for_state()
 
     def clear_unread_message(self):
         self.set_unread_message(False)
@@ -731,10 +755,20 @@ class Live2DCharacterWindow(QOpenGLWidget):
     def showEvent(self, event):
         super().showEvent(event)
         if sys.platform == "darwin":
-            QTimer.singleShot(50, lambda: _set_macos_window_level(self))
+            QTimer.singleShot(50, self._setup_macos_window)
+
+    def _setup_macos_window(self):
+        """macOS: 设置窗口层级 + 初始鼠标穿透"""
+        _set_macos_window_level(self)
+        # 默认穿透（timerEvent 会在光标移到模型上时切回来）
+        ns_win = self._get_ns_window()
+        if ns_win:
+            ns_win.setIgnoresMouseEvents_(True)
+            self._mouse_passthrough = True
 
     def closeEvent(self, event):
         """释放 Live2D 资源"""
+        self._ns_window_ref = None
         if self._model:
             self._model = None
         if self._gl_initialized:
