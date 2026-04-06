@@ -145,6 +145,10 @@ class SettingsController(QObject):
                 self._config.server.password = server["password"]
             need_reconnect = True
 
+        # 昵称变更不需要重连
+        if "nickname" in server:
+            self._config.server.nickname = server["nickname"]
+
         return need_reconnect
 
     def _update_appearance_settings(self, appearance: Dict[str, Any]) -> None:

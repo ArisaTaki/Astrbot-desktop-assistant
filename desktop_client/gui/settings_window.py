@@ -330,6 +330,11 @@ class SettingsWindow(QWidget):
         self._password.setEchoMode(QLineEdit.EchoMode.Password)
         section.add_row("密码", self._password)
 
+        self._nickname = QLineEdit()
+        self._nickname.setPlaceholderText("留空则不告知 AI 昵称")
+        self._nickname.setToolTip("设置后，AI 会用这个名字称呼你")
+        section.add_row("AI 对你的称呼", self._nickname)
+
         # 自定义 WebSocket 地址（高级选项）
         self._ws_url = QLineEdit()
         self._ws_url.setPlaceholderText("留空则自动生成 (如需自定义: wss://example.com/ws/client)")
@@ -2015,11 +2020,13 @@ class SettingsWindow(QWidget):
             self._server_url.setText(self.config.server.url or "")
             self._username.setText(self.config.server.username or "")
             self._password.setText(self.config.server.password or "")
+            self._nickname.setText(self.config.server.nickname or "")
             self._ws_url.setText(self.config.server.ws_url or "")
         elif isinstance(self.config, dict):  # Dict
             self._server_url.setText(self.config.get("server_url", ""))
             self._username.setText(self.config.get("username", ""))
             self._password.setText(self.config.get("password", ""))
+            self._nickname.setText(self.config.get("nickname", ""))
             self._ws_url.setText(self.config.get("ws_url", ""))
 
         # 外观设置
@@ -2552,8 +2559,8 @@ class SettingsWindow(QWidget):
                 "url": self._server_url.text(),
                 "username": self._username.text(),
                 "password": self._password.text(),
+                "nickname": self._nickname.text().strip(),
                 "ws_url": self._ws_url.text(),
-
             },
             "appearance": {
                 "theme": self._theme_combo.currentData(),
@@ -2627,6 +2634,7 @@ class SettingsWindow(QWidget):
             self.config.server.url = settings["server"]["url"]
             self.config.server.username = settings["server"]["username"]
             self.config.server.password = settings["server"]["password"]
+            self.config.server.nickname = settings["server"]["nickname"]
             self.config.server.ws_url = settings["server"]["ws_url"]
 
             # 外观

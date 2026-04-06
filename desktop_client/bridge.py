@@ -185,10 +185,15 @@ class MessageBridge(QObject):
             streaming = False
 
             if msg.msg_type == "text":
-                logger.info(f"发送文本消息: session_id={session_id}, content_len={len(msg.content)}")
+                text_content = msg.content
+                # 如果配置了昵称，附加到消息中让 AI 知道如何称呼用户
+                nickname = self.config.server.nickname
+                if nickname:
+                    text_content = f"[用户称呼: {nickname}]\n{text_content}"
+                logger.info(f"发送文本消息: session_id={session_id}, content_len={len(text_content)}")
                 async for event in self.api_client.send_text_message(
                     session_id=session_id,
-                    text=msg.content,
+                    text=text_content,
                     enable_streaming=streaming,
                 ):
                     logger.debug(f"收到 SSE 事件: type={event.event_type}")

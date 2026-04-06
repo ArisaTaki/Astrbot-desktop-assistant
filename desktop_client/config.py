@@ -60,6 +60,8 @@ class ServerConfig:
     url: str = "http://localhost:6185"
     username: str = "astrbot"
     password: str = ""
+    # 用户希望 AI 称呼的昵称（留空则不附加昵称信息）
+    nickname: str = ""
     # 认证 token（登录后获取）
     token: Optional[str] = None
     # 自动重连
