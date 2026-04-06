@@ -53,6 +53,7 @@ from PySide6.QtWidgets import (  # type: ignore[import-not-found]
     QSizePolicy,
     QScrollArea,
     QFileDialog,
+    QGraphicsDropShadowEffect,
 )
 from ..services.screen_capture import ScreenCaptureService
 from .themes import theme_manager, Theme
@@ -346,8 +347,8 @@ class CompactChatWindow(QWidget):
 
         self._history_widget = QWidget()
         self._history_layout = QVBoxLayout(self._history_widget)
-        self._history_layout.setContentsMargins(0, 0, 0, 0)
-        self._history_layout.setSpacing(8)
+        self._history_layout.setContentsMargins(8, 8, 8, 8)
+        self._history_layout.setSpacing(14)
         # 将 stretch 放在开头，让消息从底部向上堆叠（类似微信风格）
         self._history_layout.addStretch(1)
 
@@ -377,9 +378,17 @@ class CompactChatWindow(QWidget):
         preview_layout.addStretch()
         content_layout.addWidget(self._preview_frame)
 
-        # 4. 输入框 + 发送按钮
+        # 4. 输入区分隔线
+        self._input_separator = QFrame()
+        self._input_separator.setObjectName("inputSeparator")
+        self._input_separator.setFrameShape(QFrame.Shape.HLine)
+        self._input_separator.setFixedHeight(1)
+        content_layout.addWidget(self._input_separator)
+
+        # 5. 输入框 + 发送按钮
         input_layout = QHBoxLayout()
         input_layout.setSpacing(8)
+        input_layout.setContentsMargins(4, 6, 4, 4)
 
         # 附件按钮
         self._attach_btn = QPushButton()
@@ -545,6 +554,15 @@ class CompactChatWindow(QWidget):
         """)
 
         self._history_widget.setStyleSheet("background: transparent;")
+
+        # 输入分隔线
+        self._input_separator.setStyleSheet(f"""
+            QFrame#inputSeparator {{
+                background-color: {c.border_light};
+                border: none;
+                margin: 0px 8px;
+            }}
+        """)
 
         # 输入框 — 现代化, 带 focus 高亮和 selection 颜色
         self._input.setStyleSheet(f"""
@@ -921,6 +939,12 @@ class CompactChatWindow(QWidget):
                 font-size: {t.font_size_base}px;
             }}
         """)
+        # 柔和投影阴影
+        user_shadow = QGraphicsDropShadowEffect(lbl)
+        user_shadow.setBlurRadius(10)
+        user_shadow.setOffset(0, 2)
+        user_shadow.setColor(QColor(0, 0, 0, 20))
+        lbl.setGraphicsEffect(user_shadow)
         # 最大宽度为窗口宽度的 70% 左右
         lbl.setMaximumWidth(int(self.width() * 0.7))
         layout.addWidget(lbl)
@@ -1040,6 +1064,12 @@ class CompactChatWindow(QWidget):
                 padding: 0px;
             }}
         """)
+        # 柔和投影阴影
+        shadow = QGraphicsDropShadowEffect(bubble_frame)
+        shadow.setBlurRadius(12)
+        shadow.setOffset(0, 2)
+        shadow.setColor(QColor(0, 0, 0, 25))
+        bubble_frame.setGraphicsEffect(shadow)
         bubble_layout = QVBoxLayout(bubble_frame)
         bubble_layout.setContentsMargins(12, 10, 12, 10)
         bubble_layout.setSpacing(0)
@@ -1401,19 +1431,11 @@ class CompactChatWindow(QWidget):
             self.message_sent.emit(text)
 
         self._input.clear()
-        # 不再调用 _start_waiting()，允许连续发送消息
+        self._start_waiting()
 
     def _start_waiting(self):
-        """开始等待响应状态
-
-        注意：不再禁用输入控件，允许用户在等待响应时继续发送消息
-        """
+        """开始等待响应状态（仅重置流式状态变量，不禁用控件）"""
         self._is_waiting = True
-        # 移除禁用控件的代码，允许并发发送消息
-        # self._send_btn.setEnabled(False)
-        # self._input.setEnabled(False)
-
-        # 不创建占位消息
         self._current_ai_message_id = ""
         self._current_ai_message = ""
         self._current_ai_label = None
@@ -1853,10 +1875,6 @@ class CompactChatWindow(QWidget):
     def finish_response(self):
         """响应结束"""
         self._is_waiting = False
-        # 移除重新启用控件的代码，因为控件始终保持可用状态
-        # self._send_btn.setEnabled(True)
-        # self._input.setEnabled(True)
-        # self._input.setFocus()
 
         # 保存最终内容
         if self._current_ai_message_id and self._current_ai_message:
@@ -1866,6 +1884,7 @@ class CompactChatWindow(QWidget):
 
         self._current_ai_label = None
         self._current_ai_message_id = ""
+        self._current_ai_message = ""
 
         # 确保保存
         self._chat_history.save_to_file()
