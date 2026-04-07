@@ -1293,6 +1293,8 @@ class AstrBotApiClient:
         session_id: str,
         on_message: Optional[Callable[[dict], None]] = None,
         on_command: Optional[Callable[[str, str, dict], Any]] = None,
+        on_connection_state: Optional[Callable[[str], None]] = None,
+        on_reconnect: Optional[Callable[[], None]] = None,
         ws_port: Optional[int] = None,
         ws_url: Optional[str] = None,
     ):
@@ -1303,6 +1305,8 @@ class AstrBotApiClient:
             session_id: 会话 ID
             on_message: 消息处理回调，接收 dict 类型消息
             on_command: 命令处理回调，接收 (command, request_id, params)，返回执行结果
+            on_connection_state: 额外的 WebSocket 连接状态变化回调
+            on_reconnect: 额外的 WebSocket 重连成功回调
             ws_url: 自定义的完整 WebSocket 地址。如果设置，将忽略 ws_port。
                     格式示例: wss://example.com/ws/client
             ws_port: WebSocket 服务端口。
@@ -1316,14 +1320,24 @@ class AstrBotApiClient:
         if self.ws_client:
             await self.ws_client.stop()
 
+        def _combined_connection_state(state: str):
+            self._on_ws_connection_state_change(state)
+            if on_connection_state:
+                on_connection_state(state)
+
+        def _combined_reconnect():
+            self._on_ws_reconnect()
+            if on_reconnect:
+                on_reconnect()
+
         self.ws_client = WebSocketClient(
             server_url=self.server_url,
             token=self.token,
             session_id=session_id,
             on_message=on_message,
             on_command=on_command,
-            on_connection_state=self._on_ws_connection_state_change,
-            on_reconnect=self._on_ws_reconnect,  # 添加重连回调
+            on_connection_state=_combined_connection_state,
+            on_reconnect=_combined_reconnect,
             ws_port=ws_port,
             ws_url=ws_url,
         )

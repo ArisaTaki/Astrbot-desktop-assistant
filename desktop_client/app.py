@@ -338,15 +338,10 @@ class DesktopClientApp(QObject):
                 session_id=session_id,
                 on_message=self._on_websocket_message,
                 on_command=on_remote_command,
+                on_connection_state=on_connection_state,
                 ws_port=self.config.server.ws_port,
                 ws_url=ws_url,
             )
-
-            # 设置连接状态回调
-            if self._bridge.api_client.ws_client:
-                self._bridge.api_client.ws_client.on_connection_state = (
-                    on_connection_state
-                )
 
             logger.info("WebSocket 连接启动成功，可接收远程命令")
 
