@@ -10,6 +10,7 @@ from PySide6.QtGui import (
     QPixmap,
     QPainter,
     QDesktopServices,
+    QWheelEvent,
 )
 from PySide6.QtWidgets import (
     QWidget,
@@ -854,6 +855,13 @@ class PasteAwareTextEdit(QTextEdit):
     image_pasted = Signal(str)
     enter_pressed = Signal()
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptRichText(False)
+        self.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
     def canInsertFromMimeData(self, source):
         if source.hasImage():
             return True
@@ -880,3 +888,7 @@ class PasteAwareTextEdit(QTextEdit):
                 event.accept()
         else:
             QTextEdit.keyPressEvent(self, event)
+
+    def wheelEvent(self, event: QWheelEvent):
+        """输入框不接受滚轮滚动，避免出现可滚动的交互暗示。"""
+        event.ignore()

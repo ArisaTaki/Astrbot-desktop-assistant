@@ -16,6 +16,7 @@ try:
         QKeyEvent,
         QPaintEvent,
         QPixmap,
+        QGuiApplication,
     )
     from PySide6.QtWidgets import QWidget, QApplication, QLabel
 
@@ -100,24 +101,46 @@ if HAS_PYSIDE6:
             # 捕获当前屏幕
             self._capture_screen()
 
-            # 全屏显示
-            screen = QApplication.primaryScreen()
-            if screen:
-                geometry = screen.geometry()
-                self.setGeometry(geometry)
+            # 使用普通无边框覆盖窗口，不进入 macOS 系统全屏空间。
+            self.setGeometry(self._get_virtual_geometry())
 
             # 将提示标签居中
             self._center_tip_label()
 
-            self.showFullScreen()
+            self.show()
             self.activateWindow()
             self.raise_()
 
         def _capture_screen(self):
             """捕获当前屏幕作为背景"""
-            screen = QApplication.primaryScreen()
-            if screen:
-                self._background_pixmap = screen.grabWindow(0)
+            geometry = self._get_virtual_geometry()
+            if geometry.isNull():
+                return
+
+            canvas = QPixmap(geometry.size())
+            canvas.fill(Qt.GlobalColor.black)
+
+            painter = QPainter(canvas)
+            for screen in QGuiApplication.screens():
+                screen_geometry = screen.geometry()
+                grab = screen.grabWindow(0)
+                painter.drawPixmap(
+                    screen_geometry.topLeft() - geometry.topLeft(),
+                    grab,
+                )
+            painter.end()
+            self._background_pixmap = canvas
+
+        def _get_virtual_geometry(self) -> QRect:
+            """获取所有屏幕的联合区域。"""
+            screens = QGuiApplication.screens()
+            if not screens:
+                return QRect()
+
+            geometry = screens[0].geometry()
+            for screen in screens[1:]:
+                geometry = geometry.united(screen.geometry())
+            return geometry
 
         def _center_tip_label(self):
             """将提示标签居中"""

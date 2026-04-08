@@ -2556,13 +2556,17 @@ class FloatingBallWindow(QWidget):
         region_screenshot_action.setIcon(
             icon_manager.get_icon("screenshot", c.text_primary, 16)
         )
-        region_screenshot_action.triggered.connect(self._on_region_screenshot)
+        region_screenshot_action.triggered.connect(
+            lambda: self.screenshot_requested.emit("region")
+        )
 
         full_screenshot_action = menu.addAction("全屏截图")
         full_screenshot_action.setIcon(
             icon_manager.get_icon("screenshot", c.text_primary, 16)
         )
-        full_screenshot_action.triggered.connect(self._on_full_screenshot)
+        full_screenshot_action.triggered.connect(
+            lambda: self.screenshot_requested.emit("full")
+        )
 
         menu.addSeparator()
 

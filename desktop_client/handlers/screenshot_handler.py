@@ -8,6 +8,7 @@
 """
 
 import logging
+import sys
 from typing import TYPE_CHECKING, Optional, Any
 
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -72,6 +73,10 @@ class ScreenshotHandler(QObject):
     def _start_region_capture(self) -> None:
         """开始区域截图"""
         try:
+            if sys.platform == "darwin":
+                self._execute_macos_region_screenshot()
+                return
+
             from ..gui.screenshot_selector import RegionScreenshotCapture
 
             self._capture = RegionScreenshotCapture()
@@ -79,6 +84,33 @@ class ScreenshotHandler(QObject):
         except Exception as e:
             logger.error(f"启动截图失败: {e}")
             self._restore_capture_windows()
+
+    def _execute_macos_region_screenshot(self) -> None:
+        """macOS 使用系统原生交互式区域截图。"""
+        service = None
+        try:
+            from ..services.screen_capture import ScreenCaptureService
+
+            save_dir = str(self._config.storage.resolved_image_save_path)
+            service = ScreenCaptureService(save_dir=save_dir)
+            screenshot_path = service.capture_interactive_region_to_file()
+
+            self._restore_capture_windows()
+
+            if screenshot_path:
+                self._handle_screenshot_result(screenshot_path)
+            elif self._floating_ball:
+                error_message = (
+                    service.get_last_error() if service else "区域截图失败"
+                )
+                # 用户取消时不弹错误提示，避免打断截图体验
+                if "已取消" not in error_message:
+                    self._floating_ball.show_system_message(error_message)
+        except Exception as e:
+            logger.error(f"macOS 区域截图失败: {e}")
+            self._restore_capture_windows()
+            if self._floating_ball:
+                self._floating_ball.show_system_message(f"区域截图失败: {e}")
 
     def do_full_screenshot(self) -> None:
         """全屏截图"""
@@ -91,6 +123,7 @@ class ScreenshotHandler(QObject):
 
     def _execute_full_screenshot(self) -> None:
         """执行全屏截图"""
+        service = None
         try:
             from ..services.screen_capture import ScreenCaptureService
 
@@ -103,9 +136,16 @@ class ScreenshotHandler(QObject):
 
             if screenshot_path:
                 self._handle_screenshot_result(screenshot_path)
+            elif self._floating_ball:
+                error_message = (
+                    service.get_last_error() if service else "全屏截图失败"
+                )
+                self._floating_ball.show_system_message(error_message)
         except Exception as e:
             logger.error(f"截图失败: {e}")
             self._restore_capture_windows()
+            if self._floating_ball:
+                self._floating_ball.show_system_message(f"截图失败: {e}")
 
     def do_proactive_screenshot(self) -> None:
         """执行主动对话专用截图"""

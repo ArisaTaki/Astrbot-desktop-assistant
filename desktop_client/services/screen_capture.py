@@ -241,11 +241,19 @@ class ScreenCaptureService:
             PIL Image 对象，失败返回 None
         """
         self._set_last_error("")
-        if not HAS_MSS or not HAS_PIL:
-            self._set_last_error("截图失败：区域截图依赖未安装")
+        if not HAS_PIL:
+            self._set_last_error("截图失败：Pillow 未安装")
             return None
 
         try:
+            if sys.platform == "darwin":
+                if not self._check_macos_screen_capture_access(request_if_needed=True):
+                    return None
+                return self._capture_region_macos(left, top, width, height)
+
+            if not HAS_MSS:
+                self._set_last_error("截图失败：区域截图依赖未安装")
+                return None
             with mss.mss() as sct:
                 region = {"left": left, "top": top, "width": width, "height": height}
                 screenshot = sct.grab(region)
@@ -256,6 +264,56 @@ class ScreenCaptureService:
             self._set_last_error(f"区域截图失败: {e}")
             self._logger.exception("区域截图失败")
             return None
+
+    def _capture_region_macos(
+        self, left: int, top: int, width: int, height: int
+    ) -> Optional[Image.Image]:
+        """使用 macOS 原生 screencapture 抓取指定区域。"""
+        if width <= 0 or height <= 0:
+            self._set_last_error("区域截图失败：无效的选区大小")
+            return None
+
+        fd, temp_path = tempfile.mkstemp(prefix="astrbot_region_", suffix=".png")
+        os.close(fd)
+        region_arg = f"{left},{top},{width},{height}"
+        self._logger.debug("准备调用 screencapture 区域截图: region=%s", region_arg)
+
+        try:
+            result = subprocess.run(
+                ["screencapture", "-x", f"-R{region_arg}", temp_path],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            file_exists = os.path.exists(temp_path)
+            file_size = os.path.getsize(temp_path) if file_exists else 0
+            self._logger.debug(
+                "区域 screencapture 返回: code=%s stderr=%r file_exists=%s file_size=%s",
+                result.returncode,
+                result.stderr.strip(),
+                file_exists,
+                file_size,
+            )
+            if result.returncode != 0:
+                error_text = result.stderr.strip() or "未知错误"
+                self._set_last_error(f"macOS 区域截图失败: {error_text}")
+                return None
+
+            if not file_exists or file_size <= 0:
+                self._set_last_error("区域截图失败：screencapture 未生成有效图片文件")
+                return None
+
+            with Image.open(temp_path) as img:
+                return img.convert("RGB")
+        except Exception as e:
+            self._set_last_error(f"macOS 区域截图失败: {e}")
+            self._logger.exception("macOS 区域截图失败")
+            return None
+        finally:
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
 
     def capture_full_screen_to_file(
         self, filename: Optional[str] = None
@@ -386,6 +444,60 @@ class ScreenCaptureService:
             return filepath
         except Exception as e:
             print(f"保存区域截图失败: {e}")
+            return None
+
+    def capture_interactive_region_to_file(
+        self, filename: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        使用系统交互式区域选择并保存到文件。
+
+        macOS 下走原生 `screencapture -i`，其他平台暂不支持。
+        """
+        self._set_last_error("")
+
+        if sys.platform != "darwin":
+            self._set_last_error("交互式区域截图仅支持 macOS")
+            return None
+
+        if not self._check_macos_screen_capture_access(request_if_needed=True):
+            return None
+
+        if filename is None:
+            filename = f"region_{int(time.time() * 1000)}.png"
+
+        filepath = os.path.join(self.save_dir, filename)
+
+        try:
+            result = subprocess.run(
+                ["screencapture", "-i", "-x", filepath],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            file_exists = os.path.exists(filepath)
+            file_size = os.path.getsize(filepath) if file_exists else 0
+            self._logger.debug(
+                "交互式 screencapture 返回: code=%s stderr=%r file_exists=%s file_size=%s",
+                result.returncode,
+                result.stderr.strip(),
+                file_exists,
+                file_size,
+            )
+
+            if result.returncode != 0:
+                error_text = result.stderr.strip() or "用户已取消"
+                self._set_last_error(f"交互式区域截图失败: {error_text}")
+                return None
+
+            if not file_exists or file_size <= 0:
+                self._set_last_error("交互式区域截图已取消或未生成图片")
+                return None
+
+            return filepath
+        except Exception as e:
+            self._set_last_error(f"交互式区域截图失败: {e}")
+            self._logger.exception("交互式区域截图失败")
             return None
 
     def start_region_capture(
