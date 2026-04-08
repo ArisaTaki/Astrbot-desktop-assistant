@@ -93,6 +93,7 @@ class VoiceMessageWidget(QFrame):
         self._play_btn = QPushButton()
         self._play_btn.setObjectName("voicePlayBtn")
         self._play_btn.setFixedSize(36, 36)
+        self._play_btn.setIconSize(QSize(16, 16))
         self._play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._play_btn.clicked.connect(self._toggle_play)
         layout.addWidget(self._play_btn)
@@ -120,6 +121,7 @@ class VoiceMessageWidget(QFrame):
             self._update_time_display(0, int(duration * 1000))
 
         self._apply_theme()
+        self._play_btn.setIcon(icon_manager.get_icon("play", color="white", size=16))
         theme_manager.register_callback(self._on_theme_changed)
 
     def _on_theme_changed(self, theme: Theme):

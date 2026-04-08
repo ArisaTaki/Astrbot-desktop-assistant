@@ -9,6 +9,7 @@
 """
 
 import os
+from pathlib import Path
 from typing import Optional, Dict
 
 from PySide6.QtGui import QPixmap, QColor
@@ -1683,6 +1684,9 @@ class SettingsWindow(QWidget):
         """应用主题样式 — 侧边栏导航 + 卡片式布局"""
         t = theme_manager.current_theme
         c = theme_manager.get_current_colors()
+        check_icon_path = (
+            Path(__file__).resolve().parent / "assets" / "check.svg"
+        ).as_posix()
 
         # 更新侧边栏图标颜色
         nav_icons = ["globe", "palette", "keyboard", "sliders", "zap", "database", "droplet", "download"]
@@ -1861,6 +1865,7 @@ class SettingsWindow(QWidget):
             QCheckBox::indicator:checked {{
                 background-color: {c.primary};
                 border-color: {c.primary};
+                image: url("{check_icon_path}");
             }}
             QCheckBox:disabled {{
                 color: {c.text_secondary};
@@ -1872,6 +1877,7 @@ class SettingsWindow(QWidget):
             QCheckBox::indicator:checked:disabled {{
                 background-color: {c.border_base};
                 border-color: {c.border_base};
+                image: url("{check_icon_path}");
             }}
 
             /* === 头像预览 === */
