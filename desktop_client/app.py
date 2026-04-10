@@ -18,6 +18,7 @@ AstrBot 桌面客户端主应用 (QAsync 重构版)
 import asyncio
 import os
 import sys
+from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QTimer, QObject
@@ -407,6 +408,93 @@ class DesktopClientApp(QObject):
             content = data.get("content", "")
             if content and self._floating_ball:
                 self._floating_ball.show_system_message(content)
+        elif msg_type == "mirror_message":
+            self._handle_mirror_message(data)
+
+    def _get_shared_data_root_candidates(self) -> list[Path]:
+        """返回可能的 AstrBot 数据目录，用于将容器路径映射回宿主机路径。"""
+        candidates: list[Path] = []
+
+        env_root = os.environ.get("ASTRBOT_HOST_DATA_DIR", "").strip()
+        if env_root:
+            candidates.append(Path(env_root).expanduser())
+
+        repo_root = Path(__file__).resolve().parents[2]
+        candidates.append(repo_root / "astrbot" / "data")
+        candidates.append(Path.cwd() / "astrbot" / "data")
+
+        deduped: list[Path] = []
+        seen: set[str] = set()
+        for path in candidates:
+            normalized = str(path)
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            deduped.append(path)
+        return deduped
+
+    def _resolve_mirrored_media_path(self, raw_path: str) -> str:
+        """将容器内的媒体路径映射为 desktop 客户端可直接访问的本地路径。"""
+        if not raw_path:
+            return ""
+
+        normalized = str(raw_path).strip()
+        if normalized.startswith("file://"):
+            normalized = normalized[7:]
+
+        if os.path.exists(normalized):
+            return normalized
+
+        container_prefixes = ("/AstrBot/data/", "/AstrBot/data")
+        for prefix in container_prefixes:
+            if not normalized.startswith(prefix):
+                continue
+            relative = normalized[len(prefix) :].lstrip("/\\")
+            for root in self._get_shared_data_root_candidates():
+                candidate = root / relative
+                if candidate.exists():
+                    return str(candidate)
+
+        return normalized
+
+    def _handle_mirror_message(self, data: dict):
+        """处理服务端镜像到 desktop 的文本/图片/语音消息。"""
+        if not self._floating_ball:
+            return
+
+        mirror_type = str(data.get("msg_type") or "text").strip()
+        content = str(data.get("content") or "").strip()
+        if not content:
+            return
+
+        if mirror_type == "text":
+            self._floating_ball.show_ai_result(content, "text")
+            return
+
+        local_path = self._resolve_mirrored_media_path(content)
+        if mirror_type == "image":
+            if not os.path.exists(local_path):
+                logger.warning(f"镜像图片路径不存在: {local_path}")
+                self._floating_ball.show_bubble(f"[图片] {os.path.basename(local_path)}")
+                return
+            self._floating_ball.show_ai_result(local_path, "image")
+            return
+
+        if mirror_type == "voice":
+            if not os.path.exists(local_path):
+                logger.warning(f"镜像语音路径不存在: {local_path}")
+                self._floating_ball.show_bubble(f"🔊 [语音消息] {os.path.basename(local_path)}")
+                return
+
+            self._floating_ball.show_ai_result(f"{local_path}|0", "voice")
+            if getattr(self.config.voice, "auto_play_voice", False):
+                try:
+                    self._media_handler.play_audio(local_path)
+                except Exception as e:
+                    logger.warning(f"镜像语音自动播放失败: {e}")
+            return
+
+        logger.warning(f"未知的镜像消息类型: {mirror_type}")
 
     def _on_connection_state_changed(self, state):
         """处理连接状态变化"""

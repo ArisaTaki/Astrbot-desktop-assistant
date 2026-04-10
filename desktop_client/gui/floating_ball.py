@@ -15,6 +15,7 @@ from typing import Optional, Set
 import os
 import sys
 import math
+import time
 from enum import Enum
 
 from PySide6.QtCore import (  # type: ignore[import-not-found]
@@ -215,6 +216,8 @@ class CompactChatWindow(QWidget):
         self._current_ai_message = ""
         self._current_ai_label: Optional[MarkdownLabel] = None  # 当前 AI 回复的 MarkdownLabel
         self._current_ai_message_id: str = ""  # 当前流式响应的消息ID
+        self._recent_ai_signatures: dict[str, float] = {}
+        self._recent_ai_signature_ttl = 15.0
 
         # 已显示消息ID集合，用于避免重复显示
         self._displayed_message_ids: Set[str] = set()
@@ -1449,6 +1452,7 @@ class CompactChatWindow(QWidget):
         self._current_ai_message_id = ""
         self._current_ai_message = ""
         self._current_ai_label = None
+        self._recent_ai_signatures.clear()
 
     def add_system_message(self, text: str):
         """添加系统通知消息（仅UI，不保存到历史）"""
@@ -1551,41 +1555,53 @@ class CompactChatWindow(QWidget):
         """添加 AI 消息（通过历史记录管理器）
 
         Args:
-            text: 消息内容。对于语音消息，格式为 "path|duration"
-            msg_type: 消息类型，"text" 或 "voice"
+            text: 消息内容。对于语音消息，格式为 "path|duration"；图片消息为图片路径
+            msg_type: 消息类型，"text"、"voice" 或 "image"
         """
+        if self._should_skip_duplicate_ai_message(text, msg_type):
+            return None
+
         # 如果有等待中的消息（占位消息 "..."），需要替换它而不是创建新消息
         if self._current_ai_message_id and self._is_waiting:
             # 更新占位消息的内容和类型
             if msg_type == "voice":
                 # 语音消息需要特殊处理：删除占位消息的MarkdownLabel，显示语音组件
                 self._replace_waiting_with_voice(text)
+            elif msg_type == "image":
+                self._replace_waiting_with_image(text)
             else:
                 # 文本消息：直接更新占位消息的内容
                 self._chat_history.update_message(self._current_ai_message_id, text)
                 if self._current_ai_label:
                     self._current_ai_label.set_markdown(text)
 
+            self._remember_ai_message_signature(text, msg_type)
             self.finish_response()
             return self._current_ai_label
 
         # 没有等待中的消息，正常添加新消息
-        # 解析语音消息的文件路径
+        # 解析媒体消息的文件路径
         file_path = ""
         if msg_type == "voice":
             parts = text.split("|")
             file_path = parts[0] if parts else ""
+        elif msg_type == "image":
+            file_path = text
 
         # 添加到历史记录
         msg = self._chat_history.add_message(
             role="assistant", content=text, msg_type=msg_type, file_path=file_path
         )
+        self._remember_ai_message_signature(text, msg_type)
 
         # 显示消息
         if msg.id not in self._displayed_message_ids:
             self._displayed_message_ids.add(msg.id)
             if msg_type == "voice":
                 self._display_ai_voice(text, msg.id)
+                return None
+            if msg_type == "image":
+                self._display_ai_image(text, msg.id)
                 return None
             else:
                 label = self._display_ai_text(text, msg.id)
@@ -1594,6 +1610,85 @@ class CompactChatWindow(QWidget):
                 return label
 
         return None
+
+    def _normalize_ai_message_signature(self, content: str, msg_type: str) -> str:
+        """生成 AI 消息的去重签名。"""
+        normalized_type = (msg_type or "text").strip().lower()
+        normalized_content = (content or "").strip()
+        if not normalized_content:
+            return ""
+
+        if normalized_type == "text":
+            normalized_content = " ".join(normalized_content.split())
+        elif normalized_type == "voice":
+            normalized_content = normalized_content.split("|", 1)[0].strip()
+            normalized_content = os.path.basename(normalized_content)
+        else:
+            normalized_content = os.path.basename(normalized_content)
+
+        return f"{normalized_type}:{normalized_content}"
+
+    def _remember_ai_message_signature(self, content: str, msg_type: str) -> None:
+        """记录最近一次展示的 AI 消息，用于短时去重。"""
+        signature = self._normalize_ai_message_signature(content, msg_type)
+        if not signature:
+            return
+
+        now = time.monotonic()
+        expired = [
+            key
+            for key, ts in self._recent_ai_signatures.items()
+            if now - ts > self._recent_ai_signature_ttl
+        ]
+        for key in expired:
+            self._recent_ai_signatures.pop(key, None)
+
+        self._recent_ai_signatures[signature] = now
+
+    def _should_skip_duplicate_ai_message(self, content: str, msg_type: str) -> bool:
+        """判断是否应跳过同一轮中重复到达的 AI 消息。"""
+        signature = self._normalize_ai_message_signature(content, msg_type)
+        if not signature:
+            return False
+
+        now = time.monotonic()
+        expired = [
+            key
+            for key, ts in self._recent_ai_signatures.items()
+            if now - ts > self._recent_ai_signature_ttl
+        ]
+        for key in expired:
+            self._recent_ai_signatures.pop(key, None)
+
+        previous_ts = self._recent_ai_signatures.get(signature)
+        if previous_ts is not None and now - previous_ts <= self._recent_ai_signature_ttl:
+            print(f"[CompactChatWindow] 跳过重复 AI 消息: {signature}")
+            return True
+
+        normalized_type, _, normalized_content = signature.partition(":")
+        if normalized_type == "text" and normalized_content:
+            for existing_signature, existing_ts in self._recent_ai_signatures.items():
+                if now - existing_ts > self._recent_ai_signature_ttl:
+                    continue
+                existing_type, _, existing_content = existing_signature.partition(":")
+                if existing_type != "text" or not existing_content:
+                    continue
+
+                shorter_len = min(len(normalized_content), len(existing_content))
+                longer_len = max(len(normalized_content), len(existing_content))
+                if shorter_len < 40 or longer_len == 0:
+                    continue
+
+                if (
+                    normalized_content in existing_content
+                    or existing_content in normalized_content
+                ) and (shorter_len / longer_len) >= 0.72:
+                    print(
+                        "[CompactChatWindow] 跳过相似重复 AI 文本: "
+                        f"{signature} ~= {existing_signature}"
+                    )
+                    return True
+        return False
 
     def _replace_waiting_with_voice(self, content: str):
         """将等待中的占位消息替换为语音消息组件
@@ -1637,6 +1732,31 @@ class CompactChatWindow(QWidget):
 
         # 显示语音消息组件
         self._display_ai_voice(content, self._current_ai_message_id)
+
+    def _replace_waiting_with_image(self, image_path: str):
+        """将等待中的占位消息替换为图片消息组件。"""
+        if not self._current_ai_message_id:
+            return
+
+        self._chat_history.update_message(self._current_ai_message_id, image_path)
+
+        if self._current_ai_label:
+            parent_obj = self._current_ai_label.parent()
+            if parent_obj and isinstance(parent_obj, QWidget):
+                parent_widget = parent_obj
+                for i in range(self._history_layout.count()):
+                    item = self._history_layout.itemAt(i)
+                    if item and item.widget() == parent_widget:
+                        self._history_layout.removeWidget(parent_widget)
+                        parent_widget.deleteLater()
+                        break
+
+            if self._current_ai_message_id in self._message_labels:
+                del self._message_labels[self._current_ai_message_id]
+
+            self._current_ai_label = None
+
+        self._display_ai_image(image_path, self._current_ai_message_id)
 
     def add_voice_message(
         self, audio_path: str, duration: float = 0, is_user: bool = False
@@ -1891,6 +2011,7 @@ class CompactChatWindow(QWidget):
             self._chat_history.update_message(
                 self._current_ai_message_id, self._current_ai_message
             )
+            self._remember_ai_message_signature(self._current_ai_message, "text")
 
         self._current_ai_label = None
         self._current_ai_message_id = ""
@@ -2662,6 +2783,12 @@ class FloatingBallWindow(QWidget):
         """显示气泡 (实际显示在精简窗口中)"""
         self._update_compact_window_position()
         self._compact_window.add_ai_message(text)
+        self._compact_window.show()
+
+    def show_ai_result(self, content: str, msg_type: str = "text"):
+        """显示 AI 结果，支持文本、图片和语音镜像回显。"""
+        self._update_compact_window_position()
+        self._compact_window.add_ai_message(content, msg_type)
         self._compact_window.show()
 
     def show_system_message(self, text: str):
