@@ -888,23 +888,35 @@ class DesktopClientApp(QObject):
 
         python = sys.executable
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if getattr(sys, "frozen", False):
+            launch_args = [python, *sys.argv[1:]]
+        else:
+            launch_args = [python, "-m", "desktop_client", *sys.argv[1:]]
 
         try:
             if os.name == "nt":
                 subprocess.Popen(
-                    [python, "-m", "desktop_client"],
+                    launch_args,
                     cwd=project_root,
                     creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                    close_fds=True,
                 )
             else:
-                subprocess.Popen([python, "-m", "desktop_client"], cwd=project_root)
+                subprocess.Popen(
+                    launch_args,
+                    cwd=project_root,
+                    close_fds=True,
+                    start_new_session=True,
+                )
             logger.debug("新进程已启动")
         except Exception as e:
             logger.error(f"重启失败: {e}")
+            if self._floating_ball:
+                self._floating_ball.show_system_message(f"重启失败: {e}")
             return
 
         if self._app:
-            self._app.quit()
+            QTimer.singleShot(200, self._app.quit)
 
     def _quit(self):
         """退出应用"""
